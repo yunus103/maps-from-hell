@@ -12,6 +12,15 @@ const BOX = { w: CAR_DIMS.W, h: 0.9, l: CAR_DIMS.L, y: 0.85 };
 // How long after a handbrake pull a slide still counts as an intended drift.
 const HANDBRAKE_WINDOW = 0.6;
 const SPAWN_Y = 1;
+// Automatic 5-speed box: each gear's top speed as a fraction of maxSpeed (the last is the limiter).
+const GEAR_TOPS = [0.22, 0.38, 0.55, 0.75, 1];
+const UPSHIFT_AT = 0.97; // fraction of the gear's top speed
+const DOWNSHIFT_AT = 0.7; // fraction of the lower gear's top speed
+const IDLE_RPM = 0.2;
+// Above this yaw rate (rad/s) a slide past 90° (a donut) still counts as a drift.
+const DONUT_YAW_RATE = 1.5;
+// Seconds for the boost to ease in and out.
+const BOOST_EASE = 0.3;
 
 export const carParams = {
   mass: 1200,
@@ -32,8 +41,12 @@ export const carParams = {
   slideGrip: 0.84,
   handbrakeGrip: 0.45,
 
-  engineForce: 8000,
+  engineForce: 6000, // first-gear force; higher gears get less (gearSpread)
   maxSpeed: 45,
+  gearSpread: 1.15, // force ratio between neighbouring gears
+  shiftTime: 0.15, // seconds without drive during an upshift
+  driftPower: 1.2, // drive force in a drift as a multiple of engineForce, independent of gear
+  driftRampTime: 0.4, // seconds to blend drift power/assists in and out, so drift start and end don't jolt
   brakeForce: 12000,
   reverseForce: 4000,
   maxReverse: 10,
@@ -44,29 +57,30 @@ export const carParams = {
   highSpeedSteer: 0.4, // steer limit fraction at steerFalloffSpeed
   steerFalloffSpeed: 30,
 
-  driftAssist: 0.68,
+  driftAssist: 0.55,
   assistStartDeg: 6,
 
   // Drift state: entered above driftEnterDeg with intent (handbrake or low-speed power-over),
   // or above driftAutoEnterDeg regardless; left after driftExitTime below driftExitDeg.
   driftEnterDeg: 12,
   driftAutoEnterDeg: 25,
-  driftExitDeg: 3,
+  driftExitDeg: 6,
   driftExitTime: 0.35,
   driftMinSpeed: 5,
-  driftGripLift: 1.05, // rear grip multiplier in a drift with no throttle
+  driftGripLift: 1.15, // rear grip multiplier in a drift with no throttle
   driftGripThrottle: 0.9, // ... and at full throttle: throttle holds the angle
   driftMaxDeg: 42, // past this the rear regains grip so the car doesn't spin
   spinGuardGrip: 2.3,
+  spinGuardSpeed: 15, // m/s; the guard fades out below this (off under half) so low-speed donuts work
   driftSpeedKeep: 0.2, // fraction of slide drag given back as thrust while on throttle
   driftSteerYaw: 1.5, // rad/s² of yaw from steering input while drifting
-  powerOversteer: 0.35, // rear grip lost to full throttle + full steer outside a drift
+  powerOversteer: 0.5, // rear grip lost to full throttle + full steer outside a drift
   powerOversteerMaxSpeed: 20, // m/s; power-over fades out above this, so fast grip corners stay grippy
   highSpeedStability: 0.3, // extra rear grip outside a drift, ramping in over 15 m/s above powerOversteerMaxSpeed
 
   boostMinTime: 1.2,
   boostDuration: 1,
-  boostForce: 7000,
+  boostForce: 4000,
 };
 
 export type CarStats = {
@@ -78,6 +92,8 @@ export type CarStats = {
   drifting: boolean;
   driftTime: number;
   boosting: boolean;
+  gear: number;
+  rpm: number; // 0..1, idle to redline
 };
 
 type Wheel = {
@@ -102,9 +118,9 @@ const contact = new THREE.Vector3();
 const point = new THREE.Vector3();
 const wFwd = new THREE.Vector3();
 const wLeft = new THREE.Vector3();
-const velDir = new THREE.Vector3();
 const vec = new THREE.Vector3();
 const force = new THREE.Vector3();
+const velDir = new THREE.Vector3();
 
 const clamp01 = (x: number) => Math.min(Math.max(x, 0), 1);
 
@@ -119,6 +135,8 @@ export class Car {
     drifting: false,
     driftTime: 0,
     boosting: false,
+    gear: 1,
+    rpm: IDLE_RPM,
   };
   readonly body: RAPIER.RigidBody;
   private readonly world: RAPIER.World;
@@ -130,6 +148,8 @@ export class Car {
   private handbrakeWindow = 0;
   private straightTime = 0;
   private boostTime = 0;
+  private shiftTimer = 0;
+  private driftRamp = 0; // 0..1, eases drift-only forces in and out
 
   constructor(world: RAPIER.World, scene: THREE.Scene) {
     this.world = world;
@@ -183,6 +203,8 @@ export class Car {
     this.stats.drifting = false;
     this.stats.driftTime = 0;
     this.boostTime = 0;
+    this.driftRamp = 0;
+    this.stats.gear = 1;
     for (const w of this.wheels) w.compression = 0;
   }
 
@@ -218,7 +240,8 @@ export class Car {
     this.handbrakeWindow = input.handbrake ? HANDBRAKE_WINDOW : Math.max(this.handbrakeWindow - dt, 0);
     const powerOver = clamp01((p.powerOversteerMaxSpeed - speed) / 5);
     const wasDrifting = stats.drifting;
-    if (vLong <= 0 || speed < p.driftMinSpeed) {
+    const yawRate = Math.abs(body.angvel().y);
+    if (speed < p.driftMinSpeed || (vLong <= 0 && yawRate < DONUT_YAW_RATE)) {
       stats.drifting = false;
     } else if (!stats.drifting) {
       const intent = this.handbrakeWindow > 0 || (input.throttle > 0.5 && powerOver > 0);
@@ -245,16 +268,20 @@ export class Car {
     let rearMul: number;
     if (stats.drifting) {
       rearMul = p.driftGripLift + (p.driftGripThrottle - p.driftGripLift) * input.throttle;
-      const over = clamp01((absBeta - p.driftMaxDeg * DEG) / (10 * DEG));
+      const half = p.spinGuardSpeed / 2;
+      const over = clamp01((absBeta - p.driftMaxDeg * DEG) / (10 * DEG)) * clamp01((speed - half) / half);
       rearMul += (p.spinGuardGrip - rearMul) * over;
     } else {
-      rearMul = 1 - p.powerOversteer * input.throttle * Math.abs(input.steer) * clamp01(speed / 10) * powerOver;
+      rearMul = 1 - p.powerOversteer * input.throttle * Math.abs(input.steer) * clamp01(speed / 4.2) * powerOver;
       rearMul *= 1 + p.highSpeedStability * clamp01((speed - p.powerOversteerMaxSpeed) / 15);
     }
 
     let drive = 0;
     let brake = 0;
-    if (input.throttle > 0) drive = input.throttle * p.engineForce * Math.max(1 - (vLong / p.maxSpeed) ** 2, 0);
+    const rampStep = dt / Math.max(p.driftRampTime, 1e-3);
+    this.driftRamp = clamp01(this.driftRamp + (stats.drifting ? rampStep : -rampStep));
+    const gearForce = this.updateGearbox(Math.max(vLong, 0) / p.maxSpeed, stats.drifting, dt);
+    if (input.throttle > 0) drive = input.throttle * p.engineForce * gearForce;
     if (input.brake > 0) {
       if (vLong > 1) brake = input.brake * p.brakeForce;
       else if (vLong > -p.maxReverse) drive -= input.brake * p.reverseForce;
@@ -333,10 +360,10 @@ export class Car {
     if (stats.drifting && grounded >= 2) {
       // Give back part of the speed the sideways tires scrub off, so a held drift doesn't die.
       if (slideDrag > 0) {
-        body.applyImpulse(force.copy(velDir).multiplyScalar(slideDrag * p.driftSpeedKeep * input.throttle * dt), true);
+        body.applyImpulse(force.copy(velDir).multiplyScalar(slideDrag * p.driftSpeedKeep * input.throttle * this.driftRamp * dt), true);
       }
       // Steering input nudges the drift angle directly.
-      body.applyTorqueImpulse(force.copy(up).multiplyScalar(input.steer * p.driftSteerYaw * this.yawInertia * dt), true);
+      body.applyTorqueImpulse(force.copy(up).multiplyScalar(input.steer * p.driftSteerYaw * this.yawInertia * this.driftRamp * dt), true);
     }
 
     if (stats.drifting) {
@@ -347,10 +374,36 @@ export class Car {
     }
     if (this.boostTime > 0) {
       this.boostTime -= dt;
-      if (grounded >= 2) body.applyImpulse(force.copy(fwd).multiplyScalar(p.boostForce * dt), true);
+      const elapsed = p.boostDuration - this.boostTime;
+      const ease = clamp01(Math.min(elapsed, this.boostTime) / BOOST_EASE);
+      if (grounded >= 2) body.applyImpulse(force.copy(fwd).multiplyScalar(p.boostForce * ease * dt), true);
     }
 
     Object.assign(stats, { speed, vLong, beta, frontSlip, rearSlip, boosting: this.boostTime > 0 });
+  }
+
+  // Shifts by road speed and returns the drive-force multiplier for the current gear and revs.
+  // In a drift the gear is held (no power cut mid-slide) and power is gear-independent:
+  // the gearing shapes straight-line acceleration, it shouldn't starve a drift.
+  private updateGearbox(speedFrac: number, drifting: boolean, dt: number): number {
+    const p = carParams;
+    const stats = this.stats;
+    this.shiftTimer = Math.max(this.shiftTimer - dt, 0);
+    if (drifting) {
+      // hold gear
+    } else if (stats.gear < GEAR_TOPS.length && speedFrac > GEAR_TOPS[stats.gear - 1] * UPSHIFT_AT) {
+      stats.gear++;
+      this.shiftTimer = p.shiftTime;
+    } else if (stats.gear > 1 && speedFrac < GEAR_TOPS[stats.gear - 2] * DOWNSHIFT_AT) {
+      stats.gear--;
+    }
+    const inGear = clamp01(speedFrac / GEAR_TOPS[stats.gear - 1]);
+    stats.rpm = IDLE_RPM + (1 - IDLE_RPM) * (drifting ? Math.min(inGear, 0.85) : inGear);
+    // Flat torque, tailing off to 40% near redline.
+    const torque = stats.rpm < 0.85 ? 1 : 1 - ((stats.rpm - 0.85) / 0.15) * 0.6;
+    const geared = this.shiftTimer > 0 || speedFrac >= 1 ? 0 : torque * p.gearSpread ** -(stats.gear - 1);
+    const drift = p.driftPower * Math.max(1 - speedFrac * speedFrac, 0);
+    return geared + (drift - geared) * this.driftRamp;
   }
 
   // Interpolates between the last two physics states so rendering is smooth at any refresh rate.

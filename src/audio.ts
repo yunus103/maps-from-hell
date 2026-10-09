@@ -3,8 +3,7 @@ import type { CarStats } from './car';
 export const audioParams = { volume: 0.6 };
 
 const DEG = Math.PI / 180;
-// Fake 5-speed gearbox: upshift points as fractions of top speed.
-const GEARS = [0, 0.18, 0.32, 0.47, 0.64, 1];
+// Short rev dip after an upshift; the car's own shift cut is about this long.
 const SHIFT_DIP = 0.18;
 
 type Engine = { o1: OscillatorNode; o2: OscillatorNode; o3: OscillatorNode; lp: BiquadFilterNode; gain: GainNode };
@@ -13,6 +12,7 @@ let ac: AudioContext | null = null;
 let master: GainNode;
 let engine: Engine;
 let screech: GainNode;
+let wind: GainNode;
 let gear = 1;
 let shiftT = 0;
 
@@ -59,6 +59,18 @@ function init() {
   screech = ac.createGain();
   screech.gain.value = 0;
   noise.connect(bp).connect(screech).connect(master);
+
+  // Wind: the same noise, low-passed, rising with speed.
+  const windNoise = ac.createBufferSource();
+  windNoise.buffer = buf;
+  windNoise.loop = true;
+  windNoise.start(0, 1); // offset so it doesn't phase with the screech
+  const windLp = ac.createBiquadFilter();
+  windLp.type = 'lowpass';
+  windLp.frequency.value = 700;
+  wind = ac.createGain();
+  wind.gain.value = 0;
+  windNoise.connect(windLp).connect(wind).connect(master);
 }
 
 addEventListener('keydown', init);
@@ -74,17 +86,14 @@ export function updateAudio(dt: number, stats: CarStats, throttle: number, maxSp
   const t = ac.currentTime;
   master.gain.setTargetAtTime(audioParams.volume, t, 0.05);
 
-  const frac = Math.min(stats.speed / maxSpeed, 1);
-  let g = 1;
-  while (g < 5 && frac > GEARS[g]) g++;
-  if (stats.vLong < -0.5) g = 1;
-  if (g > gear) shiftT = SHIFT_DIP;
-  gear = g;
+  // Revs come from the car's gearbox so what you hear matches how it pulls.
+  if (stats.gear > gear) shiftT = SHIFT_DIP;
+  gear = stats.gear;
   shiftT = Math.max(0, shiftT - dt);
-  const inGear = Math.min((frac - GEARS[gear - 1]) / (GEARS[gear] - GEARS[gear - 1]), 1);
-  // In a drift the wheels spin up, so revs follow throttle more than road speed.
-  const rev = stats.drifting ? Math.max(inGear, 0.55 + throttle * 0.4) : inGear;
-  const rpm = 850 + rev * 4600 + throttle * 250 - (shiftT > 0 ? 900 : 0);
+  let rev = Math.max(stats.rpm - (shiftT > 0 ? 0.15 : 0), 0);
+  // Spinning rears in a drift: revs follow the throttle more than road speed.
+  if (stats.drifting) rev = Math.max(rev, 0.55 + throttle * 0.35);
+  const rpm = 850 + rev * 5200 + throttle * 250;
   const f = rpm / 30;
   engine.o1.frequency.setTargetAtTime(f, t, 0.05);
   engine.o2.frequency.setTargetAtTime(f * 0.5, t, 0.05);
@@ -95,4 +104,7 @@ export function updateAudio(dt: number, stats: CarStats, throttle: number, maxSp
   const slide = Math.min(Math.max((stats.rearSlip - 8 * DEG) / (20 * DEG), 0), 1);
   const speedT = Math.min(stats.speed / 8, 1);
   screech.gain.setTargetAtTime(slide * speedT * 0.07, t, 0.05);
+
+  const windT = Math.min(stats.speed / maxSpeed, 1);
+  wind.gain.setTargetAtTime(windT * windT * 0.06, t, 0.1);
 }

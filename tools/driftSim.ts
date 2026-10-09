@@ -51,14 +51,16 @@ function reachSpeed(r: Rig, kmh: number) {
 
 function accel() {
   const r = rig();
+  let t50 = NaN;
   let t100 = NaN;
   let top = 0;
   tick(r, { ...idle(), throttle: 1 }, 40, () => {
     const kmh = r.car.stats.speed * KMH;
+    if (isNaN(t50) && kmh >= 50) t50 = r.time - 1;
     if (isNaN(t100) && kmh >= 100) t100 = r.time - 1;
     top = Math.max(top, kmh);
   });
-  return { '0-100 s': t100.toFixed(1), 'top km/h': top.toFixed(0) };
+  return { '0-50 s': t50.toFixed(1), '0-100 s': t100.toFixed(1), 'top km/h': top.toFixed(0) };
 }
 
 function corner(kmh: number, throttle: number) {

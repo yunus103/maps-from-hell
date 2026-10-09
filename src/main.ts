@@ -117,7 +117,7 @@ renderer.setAnimationLoop((time) => {
   const s = car.stats;
   updateDebug(
     dt,
-    `\nspeed ${Math.round(s.speed * 3.6)} km/h\n` +
+    `\nspeed ${Math.round(s.speed * 3.6)} km/h  gear ${s.gear}\n` +
       `angle ${Math.round(s.beta * RAD_TO_DEG)}°\n` +
       `slip  F ${Math.round(s.frontSlip * RAD_TO_DEG)}° R ${Math.round(s.rearSlip * RAD_TO_DEG)}°\n` +
       `drift ${s.drifting ? s.driftTime.toFixed(1) + 's' : '-'}${s.boosting ? '  BOOST' : ''}`,
