@@ -9,7 +9,7 @@ import { createTrack } from './track';
 import { CAMERA_QUERY_GROUPS, createBlock } from './block';
 import { createTuning } from './tuning';
 import { updateAudio } from './audio';
-import { createLighting } from './lighting';
+import { PRESETS, createLighting } from './lighting';
 import { createPost } from './post';
 
 const PHYSICS_DT = 1 / 60;
@@ -38,7 +38,6 @@ const controls = new OrbitControls(camera, renderer.domElement);
 controls.enableDamping = true;
 controls.enabled = false;
 
-const lighting = createLighting(scene);
 const post = createPost(renderer, scene, camera);
 
 const world = new RAPIER.World({ x: 0, y: -9.81, z: 0 });
@@ -46,6 +45,7 @@ world.timestep = PHYSICS_DT;
 
 const level = new URLSearchParams(location.search).has('track') ? createTrack(scene, world) : createBlock(scene, world);
 const car = new Car(world, scene);
+const lighting = createLighting(scene, level.lamps, car.model.group);
 const cameraBall = new RAPIER.Ball(1);
 const updateChase = createChaseCamera(camera, (from, to, radius) => {
   cameraBall.radius = radius;
@@ -64,12 +64,30 @@ const updateChase = createChaseCamera(camera, (from, to, radius) => {
   );
   return hit ? hit.time_of_impact : 1;
 });
-const gui = createTuning(() => {
+function applyTuning() {
   car.applyParams();
   lighting.apply();
   post.apply();
-});
+}
+const gui = createTuning(applyTuning);
+// createTuning loads the saved values; push them into the car, lights and post once.
+applyTuning();
 gui.addFolder('Render').close().add(renderer, 'toneMappingExposure', 0, 3, 0.01).name('exposure');
+
+// Time of day: picking a preset overwrites the Lighting values (T cycles through them).
+const presetNames = Object.keys(PRESETS);
+const timeOfDay = gui
+  .add({ preset: 'day' }, 'preset', presetNames)
+  .name('time of day')
+  .onChange((name: string) => {
+    lighting.setPreset(name);
+    for (const c of gui.controllersRecursive()) c.updateDisplay();
+  });
+addEventListener('keydown', (e) => {
+  if (e.code !== 'KeyT' || e.repeat) return;
+  const next = presetNames[(presetNames.indexOf(timeOfDay.getValue()) + 1) % presetNames.length];
+  timeOfDay.setValue(next);
+});
 
 const updateDebug = createDebugOverlay(renderer);
 

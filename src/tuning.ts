@@ -170,6 +170,10 @@ export function createTuning(onChange: () => void): GUI {
   light.add(l, 'hemiIntensity', 0, 4, 0.05);
   light.add(l, 'fogNear', 0, 300, 1);
   light.add(l, 'fogFar', 50, 900, 1);
+  light.add(l, 'glow', 0, 8, 0.05);
+  light.add(l, 'lampIntensity', 0, 800, 1);
+  light.add(l, 'headlights', 0, 500, 1);
+  light.add(l, 'carFill', 0, 40, 0.1);
 
   const pp = postParams;
   const post = gui.addFolder('Post').close();

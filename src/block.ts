@@ -4,7 +4,7 @@ import type { Track } from './track';
 import { MeshBuilder } from './meshBuilder';
 import { swatchUV, worldMaterial, type Swatch } from './palette';
 import { addBuilding, type Side } from './buildings';
-import { POLE_HEIGHT, cable, utilityPole } from './props';
+import { LAMP_POST_HEIGHT, POLE_HEIGHT, cable, lampPost, utilityPole } from './props';
 
 // Mahalle test block: a 3x3 street grid (4 blocks) closed in by a ring of buildings.
 const STREETS = [-50, 0, 50]; // centre lines of both the N-S and the E-W streets
@@ -112,6 +112,7 @@ export function createBlock(scene: THREE.Scene, world: RAPIER.World): Track {
     solid(x0, x1, 0, CURB_H, z0, z1);
   };
   const anchors: { at: THREE.Vector3; ns: boolean }[] = []; // free wall brackets for service wires
+  const lamps: THREE.Vector3[] = [];
   const building = (x0: number, x1: number, z0: number, z1: number, floors: number[], front: Side, exposed: Side[]) => {
     const n = floors[0] + Math.floor(rand() * (floors[1] - floors[0] + 1));
     const { solids, anchor } = addBuilding(mb, rand, { x0, x1, z0, z1, base: CURB_H, floors: n, front, exposed });
@@ -219,7 +220,8 @@ export function createBlock(scene: THREE.Scene, world: RAPIER.World): Track {
         const along = (a0 + a1) / 2;
         const off = c + side * (hw + POLE_CURB_GAP);
         const foot = ns ? new THREE.Vector3(off, CURB_H, along) : new THREE.Vector3(along, CURB_H, off);
-        const wires = utilityPole(mb, foot, toRoad);
+        const { wires, lamp } = utilityPole(mb, foot, toRoad);
+        lamps.push(lamp);
         solid(foot.x - 0.15, foot.x + 0.15, CURB_H, CURB_H + POLE_HEIGHT, foot.z - 0.15, foot.z + 0.15, THIN_GROUPS);
         if (prev && along - prev.along < MAX_WIRE_SPAN) wires.forEach((w, j) => cable(mb, prev!.wires[j], w));
         prev = { along, wires };
@@ -240,6 +242,18 @@ export function createBlock(scene: THREE.Scene, world: RAPIER.World): Track {
       }
     }
   });
+
+  // A lamp post on one corner of every intersection, where the drifting happens, rotating round the corners
+  // so the light doesn't always come from the same side.
+  STREETS.forEach((cx, i) =>
+    STREETS.forEach((cz, j) => {
+      const q = (i + 2 * j) % 4;
+      const [sx, sz] = [q < 2 ? 1 : -1, q % 2 ? 1 : -1];
+      const foot = new THREE.Vector3(cx + sx * (streetWidth(cx) / 2 + 0.6), CURB_H, cz + sz * (streetWidth(cz) / 2 + 0.6));
+      lamps.push(lampPost(mb, foot, new THREE.Vector3(-sx, 0, 0)));
+      solid(foot.x - 0.13, foot.x + 0.13, CURB_H, CURB_H + LAMP_POST_HEIGHT, foot.z - 0.13, foot.z + 0.13, THIN_GROUPS);
+    }),
+  );
 
   const ramp = rampGeometry();
   world.createCollider(RAPIER.ColliderDesc.trimesh(ramp.vertices, ramp.indices));
@@ -274,5 +288,6 @@ export function createBlock(scene: THREE.Scene, world: RAPIER.World): Track {
       return best;
     },
     syncProps() {},
+    lamps,
   };
 }

@@ -27,6 +27,7 @@ const SLAB = 0.25; // çıkma floor slab thickness
 const AWNING = { pivotY: 2.88, depth: 1.3, tilt: 22 * DEG, stripe: 0.45, valance: 0.25 };
 const CUMBA = { depth: 0.7, bracketDrop: 0.8 };
 const ROOF_PITCH = 28 * DEG;
+const LIT_CHANCE = 0.4; // share of windows with the lights on at night
 
 const UP = new THREE.Vector3(0, 1, 0);
 const NORMALS: Record<Side, THREE.Vector3> = {
@@ -120,7 +121,7 @@ function makeStyle(rand: Rand, kind: Style['kind']): Style {
 
 function windowOpts(rand: Rand, style: Style): WindowOpts {
   return {
-    glass: rand() < style.curtains ? 'curtain' : 'glass',
+    glass: rand() < style.curtains ? (rand() < LIT_CHANCE ? 'curtainLit' : 'curtain') : rand() < LIT_CHANCE ? 'glassLit' : 'glass',
     frame: style.frame,
     shutter: style.shutterBoxes && rand() < style.shutters ? 0.3 + rand() * 0.6 : 0,
     sove: style.sove,
@@ -176,7 +177,7 @@ function shopFront(mb: MeshBuilder, frame: THREE.Matrix4, b: Box, rand: Rand, u0
   const g1 = 2.7;
   const ua = u0 + 0.15;
   const ub = u1 - 0.15;
-  b(ua, ub, g0, g1, 0, 0.04, 'glass');
+  b(ua, ub, g0, g1, 0, 0.04, rand() < 0.8 ? 'glassLit' : 'glass');
   b(ua - 0.08, ua, g0, g1 + 0.08, 0, 0.08, 'shopFrame');
   b(ub, ub + 0.08, g0, g1 + 0.08, 0, 0.08, 'shopFrame');
   b(ua, ub, g1, g1 + 0.08, 0, 0.08, 'shopFrame');

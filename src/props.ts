@@ -104,27 +104,44 @@ function axisBox(mb: MeshBuilder, c: THREE.Vector3, along: number, up: number, a
   mb.boxWorld(c.x - sx / 2, c.x + sx / 2, c.y - up / 2, c.y + up / 2, c.z - sz / 2, c.z + sz / 2, s);
 }
 
+// Arm reaching over the road from a pole at height `armY`, ending in a lamp head. Returns the lens centre.
+function lampArm(mb: MeshBuilder, foot: THREE.Vector3, toRoad: THREE.Vector3, armY: number): THREE.Vector3 {
+  const arm = foot.clone().setY(foot.y + armY).addScaledVector(toRoad, LAMP_ARM.reach / 2);
+  axisBox(mb, arm, LAMP_ARM.reach, 0.07, 0.07, toRoad, 'metal');
+  const head = foot.clone().setY(foot.y + armY - 0.05).addScaledVector(toRoad, LAMP_ARM.reach - 0.1);
+  axisBox(mb, head, 0.6, 0.14, 0.28, toRoad, 'metal');
+  axisBox(mb, head.clone().setY(head.y - 0.09), 0.5, 0.04, 0.22, toRoad, 'lamp');
+  return head.setY(head.y - 0.12);
+}
+
+export const LAMP_POST_HEIGHT = 7.5;
+
+// Slim steel lamp post without wires, for intersection corners. Returns the lens centre.
+export function lampPost(mb: MeshBuilder, foot: THREE.Vector3, toRoad: THREE.Vector3): THREE.Vector3 {
+  const { x, y, z } = foot;
+  mb.boxWorld(x - 0.13, x + 0.13, y, y + 0.6, z - 0.13, z + 0.13, 'metal'); // base
+  mb.boxWorld(x - 0.07, x + 0.07, y, y + LAMP_POST_HEIGHT, z - 0.07, z + 0.07, 'metal');
+  return lampArm(mb, foot, toRoad, LAMP_POST_HEIGHT - 0.3);
+}
+
 // Tapered concrete utility pole with a street lamp reaching over the road and a crossarm for the wires.
-// `foot` is the base on the sidewalk; returns the two wire attachment points (insulator tops).
-export function utilityPole(mb: MeshBuilder, foot: THREE.Vector3, toRoad: THREE.Vector3): THREE.Vector3[] {
+// `foot` is the base on the sidewalk; returns the two wire attachment points (insulator tops) and the lamp lens.
+export function utilityPole(mb: MeshBuilder, foot: THREE.Vector3, toRoad: THREE.Vector3): { wires: THREE.Vector3[]; lamp: THREE.Vector3 } {
   const { x, y, z } = foot;
   const H = POLE_HEIGHT;
   mb.boxWorld(x - 0.15, x + 0.15, y, y + H * 0.5, z - 0.15, z + 0.15, 'concrete');
   mb.boxWorld(x - 0.11, x + 0.11, y + H * 0.5, y + H, z - 0.11, z + 0.11, 'concrete');
 
-  const arm = foot.clone().setY(y + LAMP_ARM.y).addScaledVector(toRoad, LAMP_ARM.reach / 2);
-  axisBox(mb, arm, LAMP_ARM.reach, 0.07, 0.07, toRoad, 'metal');
-  const head = foot.clone().setY(y + LAMP_ARM.y - 0.05).addScaledVector(toRoad, LAMP_ARM.reach - 0.1);
-  axisBox(mb, head, 0.6, 0.14, 0.28, toRoad, 'metal');
-  axisBox(mb, head.clone().setY(head.y - 0.09), 0.5, 0.04, 0.22, toRoad, 'lamp');
+  const lamp = lampArm(mb, foot, toRoad, LAMP_ARM.y);
 
   const cross = foot.clone().setY(y + CROSSARM.y);
   axisBox(mb, cross, CROSSARM.half * 2 + 0.1, 0.08, 0.08, toRoad, 'metal');
-  return [-1, 1].map((s) => {
+  const wires = [-1, 1].map((s) => {
     const p = cross.clone().addScaledVector(toRoad, s * CROSSARM.half);
     axisBox(mb, p.clone().setY(p.y + 0.1), 0.06, 0.12, 0.06, toRoad, 'white');
     return p.setY(p.y + 0.16);
   });
+  return { wires, lamp };
 }
 
 const cableTmp = new THREE.Quaternion();

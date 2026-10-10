@@ -11,6 +11,9 @@ export const PALETTE = {
   roof: 0x9a948b,
   glass: 0x4d606b, // blue-grey: reads as glass catching the sky, not a black hole
   curtain: 0xb9b4a6,
+  // Same look by day; these glow at night (see GLOW).
+  glassLit: 0x4d606b,
+  curtainLit: 0xb9b4a6,
   frame: 0xf2efe8,
   trim: 0xebe4d6,
   metal: 0x3b3d40,
@@ -58,10 +61,20 @@ export function swatchUV(s: Swatch): [number, number] {
   return [((i % SIZE) + 0.5) / SIZE, (Math.floor(i / SIZE) + 0.5) / SIZE];
 }
 
-function paletteTexture(): THREE.DataTexture {
+// Emissive colour per swatch, scaled at runtime by the lighting preset's glow. Everything else stays dark.
+const GLOW: Partial<Record<Swatch, number>> = {
+  lamp: 0xfff0c8,
+  glassLit: 0xb87a40, // warm interior light behind glass
+  curtainLit: 0xd09858, // light through a curtain
+};
+
+function paletteTexture(colors: (s: Swatch) => number): THREE.DataTexture {
   const data = new Uint8Array(SIZE * SIZE * 4);
   // Raw sRGB bytes; the texture's colour space converts them to linear.
-  names.forEach((n, i) => data.set([PALETTE[n] >> 16, (PALETTE[n] >> 8) & 0xff, PALETTE[n] & 0xff, 255], i * 4));
+  names.forEach((n, i) => {
+    const c = colors(n);
+    data.set([c >> 16, (c >> 8) & 0xff, c & 0xff, 255], i * 4);
+  });
   const tex = new THREE.DataTexture(data, SIZE, SIZE);
   tex.colorSpace = THREE.SRGBColorSpace;
   // Nearest + no mipmaps: each face shows exactly its texel, no bleeding from neighbours.
@@ -72,4 +85,10 @@ function paletteTexture(): THREE.DataTexture {
   return tex;
 }
 
-export const worldMaterial = new THREE.MeshStandardMaterial({ map: paletteTexture(), roughness: 0.9 });
+export const worldMaterial = new THREE.MeshStandardMaterial({
+  map: paletteTexture((s) => PALETTE[s]),
+  emissiveMap: paletteTexture((s) => GLOW[s] ?? 0),
+  emissive: 0xffffff,
+  emissiveIntensity: 0, // set by the lighting preset
+  roughness: 0.9,
+});

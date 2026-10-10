@@ -146,6 +146,7 @@ export type Track = {
   // Nearest point on the centreline and the heading (0 = +Z) to drive along it.
   nearest(x: number, z: number): { x: number; z: number; heading: number };
   syncProps(): void;
+  lamps: THREE.Vector3[]; // street-lamp lens positions, lit at night
 };
 
 export function createTrack(scene: THREE.Scene, world: RAPIER.World): Track {
@@ -280,5 +281,6 @@ export function createTrack(scene: THREE.Scene, world: RAPIER.World): Track {
         mesh.quaternion.set(r.x, r.y, r.z, r.w);
       }
     },
+    lamps: [],
   };
 }
