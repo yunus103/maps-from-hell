@@ -5,6 +5,9 @@ export const audioParams = { volume: 0.6 };
 const DEG = Math.PI / 180;
 // Short rev dip after an upshift; the car's own shift cut is about this long.
 const SHIFT_DIP = 0.18;
+// Impact (m/s) for the loudest thump, and the minimum gap between thumps so scraping doesn't machine-gun.
+const IMPACT_FULL = 12;
+const THUMP_GAP = 0.15;
 
 type Engine = { o1: OscillatorNode; o2: OscillatorNode; o3: OscillatorNode; lp: BiquadFilterNode; gain: GainNode };
 
@@ -15,6 +18,8 @@ let screech: GainNode;
 let wind: GainNode;
 let gear = 1;
 let shiftT = 0;
+let noiseBuf: AudioBuffer;
+let lastThump = 0;
 
 // Browsers only allow audio after a user gesture, so the graph is built on the first key or click.
 function init() {
@@ -48,6 +53,7 @@ function init() {
   const buf = ac.createBuffer(1, ac.sampleRate * 2, ac.sampleRate);
   const ch = buf.getChannelData(0);
   for (let i = 0; i < ch.length; i++) ch[i] = Math.random() * 2 - 1;
+  noiseBuf = buf;
   const noise = ac.createBufferSource();
   noise.buffer = buf;
   noise.loop = true;
@@ -81,9 +87,41 @@ document.addEventListener('visibilitychange', () => {
   else ac.resume();
 });
 
-export function updateAudio(dt: number, stats: CarStats, throttle: number, maxSpeed: number) {
+// Collision: a falling low sine for the body thud plus a short low-passed noise crunch.
+function thump(strength: number) {
   if (!ac) return;
   const t = ac.currentTime;
+  if (t - lastThump < THUMP_GAP) return;
+  lastThump = t;
+  const peak = 0.15 + 0.45 * strength;
+
+  const osc = ac.createOscillator();
+  osc.frequency.setValueAtTime(90, t);
+  osc.frequency.exponentialRampToValueAtTime(40, t + 0.25);
+  const thud = ac.createGain();
+  thud.gain.setValueAtTime(peak, t);
+  thud.gain.exponentialRampToValueAtTime(0.001, t + 0.3);
+  osc.connect(thud).connect(master);
+  osc.start(t);
+  osc.stop(t + 0.3);
+
+  const noise = ac.createBufferSource();
+  noise.buffer = noiseBuf;
+  const lp = ac.createBiquadFilter();
+  lp.type = 'lowpass';
+  lp.frequency.value = 600 + 1400 * strength;
+  const crunch = ac.createGain();
+  crunch.gain.setValueAtTime(peak * 0.6, t);
+  crunch.gain.exponentialRampToValueAtTime(0.001, t + 0.18);
+  noise.connect(lp).connect(crunch).connect(master);
+  noise.start(t, Math.random());
+  noise.stop(t + 0.18);
+}
+
+export function updateAudio(dt: number, stats: CarStats, throttle: number, maxSpeed: number, impact: number) {
+  if (!ac) return;
+  const t = ac.currentTime;
+  if (impact > 0) thump(Math.min(impact / IMPACT_FULL, 1));
   master.gain.setTargetAtTime(audioParams.volume, t, 0.05);
 
   // Revs come from the car's gearbox so what you hear matches how it pulls.

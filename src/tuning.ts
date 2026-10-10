@@ -4,16 +4,20 @@ import { cameraParams } from './chaseCamera';
 import { inputParams } from './input';
 import { modelParams } from './carModel';
 import { audioParams } from './audio';
+import { lightParams } from './lighting';
+import { postParams } from './post';
 
 const STORAGE_KEY = 'mfh.tuning.v6';
 
-type Params = Record<string, number | string>;
+type Params = Record<string, number | string | boolean>;
 const sections: Record<string, Params> = {
   car: carParams,
   camera: cameraParams,
   input: inputParams,
   model: modelParams,
   audio: audioParams,
+  light: lightParams,
+  post: postParams,
 };
 const defaults = structuredClone(sections);
 
@@ -73,6 +77,7 @@ export function createTuning(onChange: () => void): GUI {
   chassis.add(c, 'yawInertia', 0.3, 3, 0.01);
   chassis.add(c, 'extraGravity', 0, 20, 0.1);
   chassis.add(c, 'angularDamping', 0, 3, 0.01);
+  chassis.add(c, 'airLevel', 0, 60, 1);
   chassis.add(c, 'rollReduce', 0, 1, 0.01);
 
   const susp = adv.addFolder('Suspension').close();
@@ -144,11 +149,38 @@ export function createTuning(onChange: () => void): GUI {
   cam.add(k, 'driftYawBlend', 0, 1, 0.01);
   cam.add(k, 'driftLookFollow', 0.2, 10, 0.1);
   cam.add(k, 'speedShake', 0, 0.15, 0.005);
+  cam.add(k, 'impactShake', 0, 0.2, 0.005);
   cam.add(k, 'baseFov', 30, 100, 0.5);
   cam.add(k, 'fovPerSpeed', 0, 1, 0.01);
   cam.add(k, 'maxFovAdd', 0, 40, 0.5);
   cam.add(k, 'boostFov', 0, 30, 0.5);
   cam.add(k, 'fovFollow', 0.5, 20, 0.1);
+  cam.add(k, 'collisionRadius', 0, 1, 0.01);
+
+  const l = lightParams;
+  const light = gui.addFolder('Lighting').close();
+  light.add(l, 'sunElevation', 2, 90, 0.5);
+  light.add(l, 'sunAzimuth', 0, 360, 1);
+  light.addColor(l, 'sunColor');
+  light.add(l, 'sunIntensity', 0, 8, 0.05);
+  light.addColor(l, 'skyTop');
+  light.addColor(l, 'skyHorizon');
+  light.addColor(l, 'hemiSky');
+  light.addColor(l, 'hemiGround');
+  light.add(l, 'hemiIntensity', 0, 4, 0.05);
+  light.add(l, 'fogNear', 0, 300, 1);
+  light.add(l, 'fogFar', 50, 900, 1);
+
+  const pp = postParams;
+  const post = gui.addFolder('Post').close();
+  post.add(pp, 'enabled');
+  post.add(pp, 'aoIntensity', 0, 8, 0.05);
+  post.add(pp, 'aoRadius', 0.2, 10, 0.1);
+  post.add(pp, 'bloomIntensity', 0, 3, 0.01);
+  post.add(pp, 'bloomThreshold', 0, 1.5, 0.01);
+  post.add(pp, 'saturation', -1, 1, 0.01);
+  post.add(pp, 'contrast', -1, 1, 0.01);
+  post.add(pp, 'vignette', 0, 1, 0.01);
 
   gui.addFolder('Look').close().addColor(modelParams, 'paint');
   gui.addFolder('Audio').close().add(audioParams, 'volume', 0, 1, 0.01);

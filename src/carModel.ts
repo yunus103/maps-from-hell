@@ -21,7 +21,7 @@ export const WHEEL_LAYOUT = [
   { x: -W / 2 + 0.1, z: -WHEEL_Z, front: false },
 ];
 
-export const modelParams = { paint: '#3f78c9' };
+export const modelParams = { paint: '#5a9be8' };
 
 const GLASS = 0x2b3350;
 const DARK = 0x22202b;

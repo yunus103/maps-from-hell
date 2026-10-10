@@ -21,6 +21,8 @@ const IDLE_RPM = 0.2;
 const DONUT_YAW_RATE = 1.5;
 // Seconds for the boost to ease in and out.
 const BOOST_EASE = 0.3;
+// Velocity change (m/s) in one physics step, beyond gravity, that counts as a hit.
+const IMPACT_MIN = 2;
 
 export const carParams = {
   mass: 1200,
@@ -81,6 +83,8 @@ export const carParams = {
   boostMinTime: 1.2,
   boostDuration: 1,
   boostForce: 4000,
+
+  airLevel: 20, // 1/s²: how hard the car rights itself while all wheels are off the ground
 };
 
 export type CarStats = {
@@ -94,6 +98,7 @@ export type CarStats = {
   boosting: boolean;
   gear: number;
   rpm: number; // 0..1, idle to redline
+  impact: number; // m/s of velocity change from a collision in the last step, 0 if none
 };
 
 type Wheel = {
@@ -137,6 +142,7 @@ export class Car {
     boosting: false,
     gear: 1,
     rpm: IDLE_RPM,
+    impact: 0,
   };
   readonly body: RAPIER.RigidBody;
   private readonly world: RAPIER.World;
@@ -144,6 +150,7 @@ export class Car {
   private readonly ray = new RAPIER.Ray({ x: 0, y: 0, z: 0 }, { x: 0, y: -1, z: 0 });
   private readonly prevPos = new THREE.Vector3(0, SPAWN_Y, 0);
   private readonly prevQuat = new THREE.Quaternion();
+  private readonly lastVel = new THREE.Vector3();
   private yawInertia = 1;
   private handbrakeWindow = 0;
   private straightTime = 0;
@@ -158,7 +165,11 @@ export class Car {
     );
     // Density 0: mass and inertia come only from applyParams.
     world.createCollider(
-      RAPIER.ColliderDesc.cuboid(BOX.w / 2, BOX.h / 2, BOX.l / 2).setTranslation(0, BOX.y, 0).setDensity(0).setFriction(0.3),
+      RAPIER.ColliderDesc.cuboid(BOX.w / 2, BOX.h / 2, BOX.l / 2).setTranslation(0, BOX.y, 0).setDensity(0)
+        // Near-zero friction so a scraping body slides instead of snagging; restitution makes hits bounce.
+        .setFriction(0.05)
+        .setRestitution(0.4)
+        .setRestitutionCombineRule(RAPIER.CoefficientCombineRule.Max),
       this.body,
     );
     this.wheels = WHEEL_LAYOUT.map(({ x, z, front }) => ({
@@ -204,6 +215,7 @@ export class Car {
     this.stats.driftTime = 0;
     this.boostTime = 0;
     this.driftRamp = 0;
+    this.lastVel.set(0, 0, 0);
     this.stats.gear = 1;
     for (const w of this.wheels) w.compression = 0;
   }
@@ -220,13 +232,18 @@ export class Car {
     this.prevPos.copy(pos);
     this.prevQuat.copy(quat);
 
+    // Our own forces are impulses applied before the world step and already in lastVel,
+    // so what the step changed beyond gravity is contact: a hit.
+    const lv = body.linvel();
+    const hit = Math.hypot(lv.x - this.lastVel.x, lv.y - this.lastVel.y + 9.81 * dt, lv.z - this.lastVel.z);
+    stats.impact = hit >= IMPACT_MIN ? hit : 0;
+
     up.set(0, 1, 0).applyQuaternion(quat);
     down.copy(up).negate();
     fwd.set(0, 0, 1).applyQuaternion(quat);
     left.set(1, 0, 0).applyQuaternion(quat);
     com.copy(up).multiplyScalar(p.comHeight).add(pos);
 
-    const lv = body.linvel();
     vec.set(lv.x, lv.y, lv.z);
     const vLong = vec.dot(fwd);
     const vLeft = vec.dot(left);
@@ -357,6 +374,21 @@ export class Car {
 
     body.applyImpulse({ x: 0, y: -p.extraGravity * p.mass * dt, z: 0 }, true);
 
+    if (grounded === 0) {
+      // Airborne: critically damped spring toward level so jumps land on the wheels, not the nose.
+      // Axis is up × world-up; yaw is left alone.
+      const av = body.angvel();
+      const damp = 2 * Math.sqrt(p.airLevel);
+      body.setAngvel(
+        {
+          x: av.x + (-up.z * p.airLevel - av.x * damp) * dt,
+          y: av.y,
+          z: av.z + (up.x * p.airLevel - av.z * damp) * dt,
+        },
+        true,
+      );
+    }
+
     if (stats.drifting && grounded >= 2) {
       // Give back part of the speed the sideways tires scrub off, so a held drift doesn't die.
       if (slideDrag > 0) {
@@ -380,6 +412,8 @@ export class Car {
     }
 
     Object.assign(stats, { speed, vLong, beta, frontSlip, rearSlip, boosting: this.boostTime > 0 });
+    const after = body.linvel();
+    this.lastVel.set(after.x, after.y, after.z);
   }
 
   // Shifts by road speed and returns the drive-force multiplier for the current gear and revs.

@@ -14,30 +14,42 @@ export const cameraParams = {
   driftYawBlend: 0.5, // 0: look where the car points, 1: look where it travels
   driftLookFollow: 1.5, // how fast the camera eases into the drift angle; low = no snap at drift start
   speedShake: 0.025, // metres of camera shake at top speed
+  impactShake: 0.04, // metres of camera shake per m/s of collision impact
   baseFov: 62,
   fovPerSpeed: 0.35,
   maxFovAdd: 14,
   boostFov: 4,
   fovFollow: 4,
+  collisionRadius: 0.35, // metres kept between the camera and walls
 };
 
 const fwd = new THREE.Vector3();
 const look = new THREE.Vector3();
+const desired = new THREE.Vector3();
 // Speed (m/s) where shake starts and where it is full.
 const SHAKE_FROM = 20;
 const SHAKE_FULL = 42;
+const IMPACT_SHAKE_MAX = 0.6;
+const IMPACT_SHAKE_DECAY = 6; // 1/s
+// How fast the camera eases back out after a wall stops blocking it (1/s); pulling in is instant.
+const CLEAR_RETURN_RATE = 8;
+
+// Fraction (0..1) of the way from `from` to `to` that a ball of `radius` can travel before hitting the world.
+export type Clearance = (from: THREE.Vector3, to: THREE.Vector3, radius: number) => number;
 
 function dampAngle(from: number, to: number, rate: number, dt: number): number {
   const diff = Math.atan2(Math.sin(to - from), Math.cos(to - from));
   return from + diff * (1 - Math.exp(-rate * dt));
 }
 
-export function createChaseCamera(camera: THREE.PerspectiveCamera) {
+export function createChaseCamera(camera: THREE.PerspectiveCamera, clearance: Clearance) {
   let yaw: number | null = null;
+  let pull = 1;
   let driftLook = 0;
   let time = 0;
+  let impactShake = 0;
 
-  return function update(dt: number, target: THREE.Object3D, stats: CarStats) {
+  return function update(dt: number, target: THREE.Object3D, stats: CarStats, impact: number) {
     const p = cameraParams;
     fwd.set(0, 0, 1).applyQuaternion(target.quaternion);
     const heading = Math.atan2(fwd.x, fwd.z);
@@ -47,18 +59,26 @@ export function createChaseCamera(camera: THREE.PerspectiveCamera) {
     yaw = yaw === null ? targetYaw : dampAngle(yaw, targetYaw, p.yawFollow, dt);
 
     const dist = p.distance + stats.speed * p.distPerSpeed;
-    camera.position.set(
+    desired.set(
       target.position.x - Math.sin(yaw) * dist,
       target.position.y + p.height,
       target.position.z - Math.cos(yaw) * dist,
     );
-    camera.lookAt(look.copy(target.position).setY(target.position.y + p.lookHeight));
+    look.copy(target.position).setY(target.position.y + p.lookHeight);
+    // Keep the camera out of walls: cast from the look point back to where it wants to be.
+    const free = clearance(look, desired, p.collisionRadius);
+    pull = free < pull ? free : pull + (free - pull) * (1 - Math.exp(-CLEAR_RETURN_RATE * dt));
+    camera.position.lerpVectors(look, desired, pull);
+    camera.lookAt(look);
 
     // Two detuned sines read as road buzz without the jitter of random noise.
     time += dt;
     const shake = p.speedShake * Math.min(Math.max((stats.speed - SHAKE_FROM) / (SHAKE_FULL - SHAKE_FROM), 0), 1);
     camera.position.x += shake * Math.sin(time * 37.1) * Math.cos(time * 23.3);
     camera.position.y += shake * Math.sin(time * 29.7 + 1.3);
+    impactShake = Math.max(impactShake * Math.exp(-IMPACT_SHAKE_DECAY * dt), Math.min(impact * p.impactShake, IMPACT_SHAKE_MAX));
+    camera.position.x += impactShake * Math.sin(time * 61.3);
+    camera.position.y += impactShake * Math.sin(time * 53.9 + 0.7);
 
     const fov = p.baseFov + Math.min(stats.speed * p.fovPerSpeed, p.maxFovAdd) + (stats.boosting ? p.boostFov : 0);
     camera.fov += (fov - camera.fov) * (1 - Math.exp(-p.fovFollow * dt));
