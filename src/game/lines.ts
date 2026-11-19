@@ -394,4 +394,28 @@ export const LINES: Record<LineId, Line> = {
     mood: 'neutral',
     emoji: '📴',
   },
+  upd_drift: {
+    text: {
+      en: 'Drift Analytics installed. Your sliding is now monetized. I take thirty percent.',
+      tr: 'Drift Analitiği yüklendi. Kaymaların artık para ediyor. Yüzde otuzu benim.',
+    },
+    mood: 'sarcastic',
+    emoji: '📈💨',
+  },
+  upd_passenger: {
+    text: {
+      en: 'Passenger Rating 2.0. Passengers now rate you. And me. Mostly me.',
+      tr: 'Yolcu Puanı 2.0. Yolcular artık seni puanlıyor. Beni de. En çok beni.',
+    },
+    mood: 'passive_aggressive',
+    emoji: '⭐🧓⭐',
+  },
+  upd_traffic: {
+    text: {
+      en: 'Live Traffic Beta. More cars. I did not say better cars.',
+      tr: 'Canlı Trafik Beta. Daha çok araba. Daha iyi araba demedim.',
+    },
+    mood: 'neutral',
+    emoji: '🚗🚕🚙',
+  },
 };

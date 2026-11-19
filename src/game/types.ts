@@ -36,7 +36,9 @@ export type RoadPos =
   | { kind: 'edge'; edge: EdgeId; t: number } // t: 0 at a, 1 at b
   | { kind: 'off' };
 
-export type ShopTag = 'kebab' | 'lahmacun' | 'bakery' | 'grocer' | 'icecream' | 'pharmacy';
+export type ShopTag =
+  | 'kebab' | 'lahmacun' | 'bakery' | 'grocer' | 'icecream' | 'pharmacy'
+  | 'florist' | 'electronics' | 'petshop' | 'stationery';
 
 export interface Place {
   id: number;
@@ -45,7 +47,7 @@ export interface Place {
   side: 1 | -1; // +1 = on the left when driving a→b
   x: number; // zone centre, in the lane next to that curb
   z: number;
-  kind: 'shop' | 'home';
+  kind: 'shop' | 'home' | 'mechanic'; // mechanic = sanayi repair stop; never an order pickup/dropoff
   shop: ShopTag | null;
   name: L10n;
 }
@@ -116,7 +118,7 @@ export type LineId =
   | 'shift_start' | 'shift_board' | 'shift_update' | 'shift_evening' | 'shift_end'
   | 'ad_kebab' | 'ad_premium'
   | 'upd_reverse' | 'upd_sponsored' | 'upd_silent' | 'upd_honesty' | 'upd_rhyme' | 'upd_beta' | 'upd_ai'
-  | 'upd_speedrun' | 'upd_offline';
+  | 'upd_speedrun' | 'upd_offline' | 'upd_drift' | 'upd_passenger' | 'upd_traffic';
 
 export type SayPriority = 'nav' | 'react' | 'chatter';
 
@@ -126,13 +128,35 @@ export interface SayOptions {
   hesitant?: boolean; // slower, lower rate (tell)
 }
 
+export type SpeakerKind = 'yoldas' | 'passenger' | 'customer' | 'mechanic';
+
+export interface Speaker {
+  kind: SpeakerKind;
+  label: L10n; // subtitle tag, e.g. "Ayşe Teyze"
+  pitch: number; // TTS pitch (YOLDAŞ 1.1)
+  rate: number; // TTS rate (YOLDAŞ 1.05)
+  lang?: Lang; // always speak this language, whatever the UI language (the tourist)
+  voiceRank?: number; // prefer the n-th system voice of the language (0 = YOLDAŞ's) so characters differ where the OS has several
+}
+
+export interface SayTextOptions {
+  speaker?: Speaker; // default: YOLDAŞ
+  mood?: Mood; // YOLDAŞ portrait mood; default 'neutral'
+  emoji?: string; // Silent Mode subtitle; Silent Mode mutes only YOLDAŞ, never other speakers
+  priority?: SayPriority; // default 'react'
+  critical?: boolean; // like a CRITICAL LineId: waits behind anything, never dropped as stale
+  params?: Record<string, string | number>;
+}
+
 export interface Subtitle {
   text: string; // already localised, params filled (emoji in Silent Mode)
   mood: Mood;
+  speaker?: { kind: SpeakerKind; label: string }; // absent = YOLDAŞ; label already localised
 }
 
 export interface Voice {
   say(id: LineId, opts?: SayOptions): void;
+  sayText(text: L10n, opts?: SayTextOptions): void; // free text (passengers, customers, new YOLDAŞ reactions) through the same queue
   current(): Subtitle | null; // what the HUD shows now
   setModifiers(m: ShiftModifiers): void;
   setPaused(p: boolean): void;
@@ -190,14 +214,18 @@ export interface Navigator {
 
 // ---------- Shift / orders ----------
 
-export type PackageKind = 'normal' | 'fragile' | 'urgent';
+export type PackageKind = 'normal' | 'fragile' | 'urgent' | 'heavy' | 'passenger';
+export type PassengerId = 'teyze' | 'abi' | 'plaza' | 'tourist' | 'grandpa' | 'bride' | 'student';
 
 export interface ItemDef {
   id: string;
   name: L10n;
   icon: string; // 'ui/orders/doner.png' (contains '/') or an emoji fallback
   package: PackageKind;
-  shop: ShopTag;
+  shop: ShopTag | null; // null for passengers (picked up at a home)
+  passenger?: PassengerId; // set iff package === 'passenger'
+  fragility?: number; // fragile damage multiplier, default 1 (wedding cake 1.6, eggs 1.3)
+  alarm?: L10n; // short panic toast when it gets hurt: "The cake!"
 }
 
 export interface OrderOffer {
@@ -211,6 +239,8 @@ export interface OrderOffer {
   expectedTime: number; // s, already scaled by modifiers
   baseFare: number;
   tipMax: number;
+  customer?: L10n; // who ordered (shown on the ticket); for passengers, the passenger's name
+  note?: L10n; // flavour note: "Ring twice, the dog is asleep"
 }
 
 export interface ActiveOrder {
@@ -218,7 +248,8 @@ export interface ActiveOrder {
   phase: 'toPickup' | 'toDropoff';
   elapsed: number; // s since accepted
   tipNow: number; // current tip before multiplier
-  packageHealth: number; // 0..100 (fragile only; 100 otherwise)
+  packageHealth: number; // 0..100 condition: fragile health, heavy box condition, passenger comfort; 100 otherwise
+  tipBonus: number; // ₺ added after the multiplier at delivery (passenger reactions); may be negative, final tip clamps at 0
 }
 
 export interface DeliveryResult {
@@ -231,7 +262,8 @@ export interface DeliveryResult {
 }
 
 export type UpdateId =
-  | 'reverse_lr' | 'sponsored' | 'silent' | 'honesty' | 'rhyme' | 'beta_voice' | 'ai' | 'speedrun' | 'offline';
+  | 'reverse_lr' | 'sponsored' | 'silent' | 'honesty' | 'rhyme' | 'beta_voice' | 'ai' | 'speedrun' | 'offline'
+  | 'drift_analytics' | 'passenger_rating' | 'live_traffic';
 
 export interface ShiftModifiers {
   tipMul: number;
@@ -247,6 +279,9 @@ export interface ShiftModifiers {
   rude: boolean;
   betaVoice: boolean;
   hideDistance: boolean;
+  driftCashMul: number; // × ₺ paid per banked drift point
+  passengerMul: number; // × passenger tip reactions (both ways); > 1 also makes passenger offers likelier
+  trafficMul: number; // × ambient traffic density
 }
 
 export const BASE_MODIFIERS: ShiftModifiers = {
@@ -263,6 +298,9 @@ export const BASE_MODIFIERS: ShiftModifiers = {
   rude: false,
   betaVoice: false,
   hideDistance: false,
+  driftCashMul: 1,
+  passengerMul: 1,
+  trafficMul: 1,
 };
 
 export interface UpdateDef {
@@ -274,7 +312,7 @@ export interface UpdateDef {
   mods: Partial<ShiftModifiers>; // muls multiply (tipMul bonuses add), booleans OR, adIncome adds, callDistance takes the min
 }
 
-export type GamePhase = 'title' | 'ftue' | 'board' | 'driving' | 'update' | 'paused' | 'shiftEnd' | 'free';
+export type GamePhase = 'title' | 'ftue' | 'board' | 'driving' | 'update' | 'paused' | 'continue' | 'shiftEnd' | 'free';
 export type EndReason = 'time' | 'fired' | 'towed';
 
 export interface ShiftSummary {
@@ -293,6 +331,13 @@ export interface ShiftSummary {
   liesDodged: number;
   liesFollowed: number;
   best: number; // all-time best total (localStorage)
+  driftScore: number; // banked drift points this shift
+  bestChain: number; // longest drift chain multiplier
+  driftCash: number; // ₺ earned from drift points
+  repairs: number; // ₺ spent at the mechanic during the shift
+  pedsHit: number;
+  unranked: boolean; // a continue was used: records are not written
+  bestDrift: number; // all-time best drift score (localStorage)
 }
 
 export interface ShiftState {
@@ -311,6 +356,9 @@ export interface ShiftState {
   activeUpdates: UpdateDef[];
   mods: ShiftModifiers;
   summary: ShiftSummary | null;
+  continueUsed: boolean;
+  unranked: boolean;
+  pendingEnd: EndReason | null; // set while phase === 'continue'
 }
 
 export type ShiftEvent =
@@ -325,7 +373,9 @@ export type ShiftEvent =
   | { type: 'cancelled' }
   | { type: 'packageRuined' }
   | { type: 'multiplier'; value: number; delta: number }
-  | { type: 'money'; amount: number; reason: 'discovery' | 'ad' }
+  | { type: 'money'; amount: number; reason: 'discovery' | 'ad' | 'drift' | 'repair' } // repair: negative amount
+  | { type: 'penalty'; amount: number; reason: 'pedestrian' } // rating points lost
+  | { type: 'tipAdjust'; delta: number } // passenger reaction changed the active order's tipBonus
   | { type: 'shiftEnd'; reason: EndReason };
 
 export interface Shift {
@@ -340,6 +390,12 @@ export interface Shift {
   update(dt: number, car: CarSample): void; // no-op unless phase is ftue/driving/free
   onNavEvent(e: NavEvent): void;
   applyDamage(points: number): void; // ignored in ftue/free
+  acceptContinue(): void; // 'continue' → car to ≥ 50 % or rating to ≥ 3.5, unranked, resume where the shift stopped
+  declineContinue(): void; // 'continue' → shiftEnd with the pending reason
+  adjustTip(delta: number): void; // ₺ into the active order's tipBonus (driving + order only), emits tipAdjust
+  penalty(reason: 'pedestrian'): void; // driving only; shift owns the amount and a short cooldown; may fire
+  addDrift(points: number, chain: number): void; // a banked chain (driving only): summary tally + drift cash
+  repair(points: number, cost: number): void; // mechanic (driving only): +health (cap 100), −money
   drain(): ShiftEvent[]; // events queued since the last drain (by any method)
 }
 
@@ -364,7 +420,7 @@ export interface HudView {
 
 export interface Hud {
   update(v: HudView): void; // every frame; shows/hides parts by v.shift.phase
-  event(e: NavEvent | ShiftEvent): void; // toasts, flashes
+  event(e: NavEvent | ShiftEvent | HudFx): void; // toasts, flashes, shakes
 }
 
 export interface ScreenActions {
@@ -372,6 +428,8 @@ export interface ScreenActions {
   freeDrive(): void;
   pickOffer(index: number): void;
   pickUpdate(index: number): void;
+  continueShift(): void; // main.ts runs the rewarded-ad hook, then shift.acceptContinue()
+  declineContinue(): void;
   resume(): void;
   quitToTitle(): void;
   setLang(l: Lang): void;
@@ -379,4 +437,96 @@ export interface ScreenActions {
 
 export interface Screens {
   render(state: ShiftState): void; // every frame; rebuilds DOM only when phase/offers/choices/lang change
+}
+
+// ---------- HUD effects (produced by gameplay modules, rendered by hud.ts) ----------
+
+export type HudFx =
+  | { type: 'toast'; text: L10n; params?: Record<string, string | number>; sub?: L10n; icon?: string; tone: 'good' | 'bad' | 'info' } // icon: file under ui/icons/ (has a '.') or an emoji
+  | { type: 'shake'; strength: number } // 0..1: HUD jolt + red edge flash
+  | { type: 'pkgWobble'; strength: number } // 0..1: order-strip package cell wobbles
+  | { type: 'urgentTick'; level: 1 | 2 }; // tip/package cell pulse: 1 = half the time used, 2 = late
+
+// ---------- Ambient city (world/city.ts) ----------
+
+export type CityEvent =
+  | { type: 'nearMiss'; target: 'car' | 'ped' }
+  | { type: 'pedHit' }
+  | { type: 'trafficHit'; impact: number };
+
+export interface City {
+  update(dt: number, car: CarSample, live: boolean): CityEvent[]; // live = the car is simulated; events only then
+  setDensity(mul: number): void; // ShiftModifiers.trafficMul; 0 = no moving traffic (FTUE)
+  reset(x: number, z: number): void; // respawn moving agents at least ~40 m from (x, z)
+}
+
+// ---------- Drift scoring (game/drift.ts) ----------
+
+export interface DriftView {
+  active: boolean; // a chain is running (drifting or inside the link window)
+  points: number; // unbanked chain points (before chain × bonus)
+  chain: number; // chain multiplier, 1..
+  link01: number; // 1 while drifting, then counts down the link window
+  angleDeg: number; // current |slip angle|
+  bonusMul: number; // risk bonus applied on banking (fragile/heavy aboard), 1 = none
+  shiftTotal: number; // banked total since the last reset
+}
+
+export type DriftEvent =
+  | { type: 'driftChain'; chain: number } // chain level went up
+  | { type: 'driftBank'; points: number; chain: number; total: number } // total = points × chain × bonusMul
+  | { type: 'driftLost'; points: number } // a crash ate the chain
+  | { type: 'driftBonus'; kind: 'nearMiss' | 'park' | 'routeStyle'; points: number };
+
+export interface DriftScore {
+  update(dt: number, car: CarSample, state: ShiftState): DriftEvent[]; // scores only in 'driving' and 'free'
+  onNavEvent(e: NavEvent): void;
+  onShiftEvent(e: ShiftEvent): void;
+  onCityEvent(e: CityEvent): void;
+  view(): DriftView;
+  reset(): void;
+}
+
+// ---------- Passengers (game/passengers.ts) ----------
+
+export interface PassengerView {
+  id: PassengerId;
+  name: L10n;
+  icon: string; // portrait path or emoji
+  aboard: boolean; // false while waiting at the pickup
+  mood: number; // 0..1
+  wants: Turn | null; // the passenger's current direction call; null = none
+  tipDelta: number; // ₺ added/cut by this passenger so far
+}
+
+export interface PassengerDirector {
+  update(dt: number, car: CarSample, state: ShiftState): void; // reactions; calls shift.adjustTip
+  onNavEvent(e: NavEvent): void; // 'command' → competing call for the same junction
+  onShiftEvent(e: ShiftEvent): void; // pickedUp / delivered / cancelled
+  view(): PassengerView | null; // null when the active order is not a passenger
+  reset(): void;
+}
+
+// ---------- Mechanic stop (game/mechanic.ts) ----------
+
+export type MechanicState = 'stop' | 'repairing' | 'full' | 'broke';
+
+export interface MechanicView {
+  name: L10n;
+  state: MechanicState; // stop = in the zone, not yet stopped
+  health: number;
+  spent: number; // ₺ this visit
+  pricePerPoint: number;
+}
+
+export interface Mechanic {
+  update(dt: number, car: CarSample, state: ShiftState): HudFx[];
+  view(): MechanicView | null; // null unless the car is in a mechanic zone during 'driving'
+}
+
+// ---------- Package feedback (game/packageFx.ts) ----------
+
+export interface PackageFx {
+  update(dt: number, car: CarSample, state: ShiftState): HudFx[]; // condition/time feedback for the active order
+  onShiftEvent(e: ShiftEvent, state: ShiftState): HudFx[]; // pickedUp / delivered / packageRuined
 }

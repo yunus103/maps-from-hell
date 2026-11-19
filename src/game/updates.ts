@@ -77,6 +77,33 @@ export const UPDATES: UpdateDef[] = [
     line: 'upd_offline',
     mods: { hideDistance: true, tipMul: 1.2 },
   },
+  {
+    id: 'drift_analytics',
+    name: { en: 'Drift Analytics v1', tr: 'Drift Analitiği v1' },
+    desc: { en: 'Drifts pay ×3. Tips −20%', tr: 'Driftler ×3 kazandırır. Bahşiş −%20' },
+    card: 'ui/cards/drift_analytics.png',
+    line: 'upd_drift',
+    mods: { driftCashMul: 3, tipMul: 0.8 },
+  },
+  {
+    id: 'passenger_rating',
+    name: { en: 'Passenger Rating 2.0', tr: 'Yolcu Puanı 2.0' },
+    desc: {
+      en: 'Passenger reactions ×2 (both ways). More passengers. ×1.1 tips',
+      tr: 'Yolcu tepkileri ×2 (iki yönde de). Daha çok yolcu. ×1.1 bahşiş',
+    },
+    card: 'ui/cards/passenger_rating.png',
+    line: 'upd_passenger',
+    mods: { passengerMul: 2, tipMul: 1.1 },
+  },
+  {
+    id: 'live_traffic',
+    name: { en: 'Live Traffic Beta', tr: 'Canlı Trafik Beta' },
+    desc: { en: '60% more traffic. ×1.3 tips', tr: '%60 daha fazla trafik. ×1.3 bahşiş' },
+    card: 'ui/cards/live_traffic.png',
+    line: 'upd_traffic',
+    mods: { trafficMul: 1.6, tipMul: 1.3 },
+  },
 ];
 
 // Tip bonuses add up (1 + sum of bonuses) instead of multiplying: stacked ×1.x bonuses on top of the
@@ -90,6 +117,9 @@ export function combineUpdates(list: UpdateDef[]): ShiftModifiers {
     if (d.tellChanceMul !== undefined) m.tellChanceMul *= d.tellChanceMul;
     if (d.multiplierGainMul !== undefined) m.multiplierGainMul *= d.multiplierGainMul;
     if (d.timeBudgetMul !== undefined) m.timeBudgetMul *= d.timeBudgetMul;
+    if (d.driftCashMul !== undefined) m.driftCashMul *= d.driftCashMul;
+    if (d.passengerMul !== undefined) m.passengerMul *= d.passengerMul;
+    if (d.trafficMul !== undefined) m.trafficMul *= d.trafficMul;
     if (d.adIncome !== undefined) m.adIncome += d.adIncome;
     if (d.callDistance !== undefined) m.callDistance = Math.min(m.callDistance, d.callDistance);
     m.swapLeftRight ||= d.swapLeftRight ?? false;

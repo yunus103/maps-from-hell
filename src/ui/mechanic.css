@@ -1,0 +1,47 @@
+/* Mechanic prompt: centre, below the toasts; phones put it mid-height between the thumb clusters. */
+
+.mech {
+  --steel: #4a4f57;
+  position: absolute; left: 50%; top: 62%;
+  display: flex; align-items: center; gap: 0.7em;
+  width: max-content; max-width: min(26em, 90vw); padding: 0.5em 1em 0.6em 0.55em;
+  background: var(--cream); border: var(--line); border-left: 0.6em solid var(--steel);
+  border-radius: var(--radius); box-shadow: var(--drop);
+  opacity: 0; visibility: hidden; transform: translate(-50%, -50%) translateY(0.8em) scale(0.92);
+  transition: opacity 0.2s, transform 0.2s, visibility 0s 0.2s;
+}
+.mech.show {
+  opacity: 1; visibility: visible; transform: translate(-50%, -50%);
+  transition: opacity 0.2s, transform 0.25s cubic-bezier(.2, .9, .3, 1.3);
+}
+.mech-ico-box {
+  flex: none; display: grid; place-items: center; width: 2.8em; height: 2.8em;
+  background: var(--steel); border: 0.14em solid var(--ink); border-radius: 0.7em;
+}
+.mech-ico { width: 2em; height: 2em; }
+.mech-ico.fb { width: auto; height: auto; font-size: 1.5em; }
+.mech.is-repairing .mech-ico, .mech.is-repairing .mech-ico.fb { animation: mech-wrench 0.6s ease-in-out infinite; }
+@keyframes mech-wrench { 0%, 100% { transform: rotate(-20deg); } 50% { transform: rotate(25deg); } }
+
+.mech-body { display: flex; flex-direction: column; gap: 0.25em; min-width: 11em; }
+.mech-name {
+  font-size: 0.85em; font-weight: 900; letter-spacing: 0.06em; text-transform: uppercase; color: var(--steel);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.mech-state { font-size: 1.25em; font-weight: 900; line-height: 1.1; }
+.mech.is-stop .mech-state { animation: mech-blink 1s steps(2) infinite; }
+@keyframes mech-blink { 50% { opacity: 0.55; } }
+.mech.is-repairing .mech-state { color: var(--orange-lo); }
+.mech.is-broke { background: #f1c4b4; }
+.mech.is-broke .mech-state { color: var(--red); }
+.mech.is-full { background: #cfe3c9; }
+.mech.is-full .mech-state { color: var(--green); }
+.mech-bar { min-width: 0; width: 100%; flex: none; }
+
+/* ---- phone landscape: mid-height, narrower than the gap between the thumb clusters ---- */
+@media (max-height: 500px) {
+  .mech { top: 50%; max-width: 46vw; font-size: 0.85em; }
+  .mech-body { min-width: 0; }
+  .mech-state { font-size: 1.1em; }
+}
+html.is-touch .mech { max-width: min(26em, 46vw); }
