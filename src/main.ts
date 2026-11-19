@@ -46,6 +46,8 @@ const CLOCK_PHASES: GamePhase[] = ['ftue', 'board', 'driving', 'update', 'contin
 const NO_CITY_EVENTS: CityEvent[] = [];
 const CRASH_LINES: LineId[] = ['re_crash_1', 're_crash_2', 're_crash_3'];
 const CRASH_LINE_COOLDOWN = 8; // s; also starts on a fake-road hit, which has its own line
+const CRASH_LINE_TTL = 4; // s a crash line may wait out nav lines
+const CONTINUE_GRACE = 3; // s without damage after a continue puts the car back on the road
 const FAKE_HIT_DAMAGE_MUL = 0.5;
 const FAKE_HIT_DAMAGE_MAX = 8; // hp
 // Resolution fallback: averaging slower than this (~45 fps) over the window drops the pixel ratio one step.
@@ -275,6 +277,18 @@ let accumulator = 0;
 let clockLit = false; // lightParams currently come from the shift clock, not the preset
 let crashLineCooldown = 0;
 let crashLineIndex = 0;
+let damageGrace = 0;
+
+// R reset and continue: the nearest road point, facing along the road.
+function resetToRoad() {
+  const { x, z } = car.model.group.position;
+  const spot = level.nearest(x, z);
+  // nearest() only knows the road axis: keep whichever of its two directions the car was facing.
+  fwd.set(0, 0, 1).applyQuaternion(car.model.group.quaternion);
+  const flip = fwd.x * Math.sin(spot.heading) + fwd.z * Math.cos(spot.heading) < 0;
+  car.place(spot.x, spot.z, spot.heading + (flip ? Math.PI : 0));
+  game?.nav.relocate();
+}
 
 function onPhase(phase: GamePhase) {
   setAudioPaused(!DRIVE_PHASES.includes(phase));
@@ -306,6 +320,8 @@ function updateGame(dt: number, impact: number) {
   crashLineCooldown -= dt;
   if (live) {
     let lost = damage.update(dt, impact, shift.state.health);
+    damageGrace -= dt;
+    if (damageGrace > 0) lost = 0;
     let fakeHit = false;
     for (const e of nav.update(dt, sample)) {
       if (e.type === 'fakeRoadHit') fakeHit = true;
@@ -322,7 +338,7 @@ function updateGame(dt: number, impact: number) {
       hud.hit(lost);
       if (crashLineCooldown <= 0) {
         crashLineCooldown = CRASH_LINE_COOLDOWN;
-        voice.say(CRASH_LINES[crashLineIndex]);
+        voice.say(CRASH_LINES[crashLineIndex], { ttl: CRASH_LINE_TTL });
         crashLineIndex = (crashLineIndex + 1) % CRASH_LINES.length;
       }
     }
@@ -372,6 +388,12 @@ function updateGame(dt: number, impact: number) {
         city.reset(e.spawn.x, e.spawn.z);
         accumulator = 0;
         break;
+      case 'respawn':
+        resetToRoad();
+        city.reset(car.model.group.position.x, car.model.group.position.z); // clear the wreck's neighbours
+        damageGrace = CONTINUE_GRACE;
+        accumulator = 0;
+        break;
       case 'pickedUp':
         load.setLoad(shift.state.order?.offer.package ?? null);
         break;
@@ -409,15 +431,7 @@ renderer.setAnimationLoop((time) => {
   // Menus and pause freeze the car: no physics steps, no reset.
   const simulate = !game || DRIVE_PHASES.includes(game.shift.state.phase);
   touchUi.setVisible(simulate);
-  if (input.reset && simulate) {
-    const { x, z } = car.model.group.position;
-    const spot = level.nearest(x, z);
-    // nearest() only knows the road axis: keep whichever of its two directions the car was facing.
-    fwd.set(0, 0, 1).applyQuaternion(car.model.group.quaternion);
-    const flip = fwd.x * Math.sin(spot.heading) + fwd.z * Math.cos(spot.heading) < 0;
-    car.place(spot.x, spot.z, spot.heading + (flip ? Math.PI : 0));
-    game?.nav.relocate();
-  }
+  if (input.reset && simulate) resetToRoad();
 
   let impact = 0; // strongest hit across this frame's physics steps
   if (simulate) {

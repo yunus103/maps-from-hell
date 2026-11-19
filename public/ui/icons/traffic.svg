@@ -1,0 +1,17 @@
+<svg viewBox="0 0 1024 1024" xmlns="http://www.w3.org/2000/svg" width="1024" height="1024">
+  <title>Traffic light</title>
+  <g stroke="#504d4b" stroke-width="34" stroke-linecap="round" stroke-linejoin="round">
+    <path id="pole" d="M512 860V990" fill="none" stroke-width="60" />
+    <path id="visor-left" d="M332 250H230C230 310 270 350 332 356Z M332 470H230C230 530 270 570 332 576Z M332 690H230C230 750 270 790 332 796Z" fill="#e8dcc2" />
+    <path id="visor-right" d="M692 250H794C794 310 754 350 692 356Z M692 470H794C794 530 754 570 692 576Z M692 690H794C794 750 754 790 692 796Z" fill="#e8dcc2" />
+    <rect id="housing" x="332" y="40" width="360" height="840" rx="90" fill="#d9702e" />
+    <circle cx="512" cy="230" r="92" fill="#b83a30" />
+    <circle cx="512" cy="460" r="92" fill="#f0b43c" />
+    <circle cx="512" cy="690" r="92" fill="#2f7d4f" />
+  </g>
+  <g fill="#f4ecd9" stroke="none" opacity="0.8">
+    <ellipse cx="482" cy="200" rx="30" ry="20" />
+    <ellipse cx="482" cy="430" rx="30" ry="20" />
+    <ellipse cx="482" cy="660" rx="30" ry="20" />
+  </g>
+</svg>

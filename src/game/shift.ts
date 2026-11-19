@@ -211,7 +211,7 @@ export function createShift(graph: RoadGraph, voice: Voice, rand: () => number =
   function endShift(reason: EndReason) {
     voice.say(reason === 'fired' ? 're_suspended' : reason === 'towed' ? 're_towed' : 'shift_end');
     const repairBill = Math.round((100 - state.health) * REPAIR_PER_POINT);
-    const total = Math.max(0, Math.round(fares + tips + adIncome + discoveryBonus + driftCash - repairs - repairBill));
+    const total = Math.round(fares + tips + adIncome + discoveryBonus + driftCash - repairs - repairBill); // may be negative
     const drift = Math.round(driftScore);
     // A continued shift is unranked: show the stored records, never overwrite them.
     const best = state.unranked ? readNum(BEST_KEY) : Math.max(readNum(BEST_KEY), total);
@@ -264,11 +264,14 @@ export function createShift(graph: RoadGraph, voice: Voice, rand: () => number =
     state.unranked = true;
     state.pendingEnd = null;
     resumeAfterContinue = null;
+    voice.flush(); // the continue prompt (and anything queued behind it) is over
+    emit({ type: 'respawn' });
     resume();
   }
 
   function declineContinue() {
     if (state.phase !== 'continue' || !state.pendingEnd) return;
+    voice.flush();
     endShift(state.pendingEnd);
   }
 
@@ -314,6 +317,7 @@ export function createShift(graph: RoadGraph, voice: Voice, rand: () => number =
 
   function cancelOrder() {
     cancelled++;
+    voice.flush(); // chatter and calls about this order are moot now
     voice.say('re_cancel');
     rate(CANCEL_STARS);
     state.multiplier = 1;

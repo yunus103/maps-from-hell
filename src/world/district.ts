@@ -63,6 +63,7 @@ const mechanic = (seg: Seg, t: number, side: 1 | -1, en: string, tr: string): Pl
   seg, t, side, kind: 'mechanic', shop: null, name: { en, tr },
 });
 
+// Homes are buildings, never people: customers and passengers have their own names.
 // Index = Place id (append only: the FTUE and saved progress rely on ids). Sides face a block (perimeter
 // streets: the inner curb); 0 and 10 are in the right lane of the FTUE route. No place on a fake street or the
 // ramp segment, >= 20 m from another place on the same edge side, and no t in 0.40..0.46 (its sign post would
@@ -74,16 +75,16 @@ export const PLACES: PlaceDef[] = [
   shop(h(0, 3), 0.5, -1, 'grocer', 'Bakkal Remzi', 'Bakkal Remzi'),
   shop(v(0, 1), 0.5, 1, 'icecream', 'Maraş Ice Cream', 'Maraş Dondurma'),
   shop(h(1, 0), 0.5, -1, 'pharmacy', 'Night Pharmacy', 'Nöbetçi Eczane'),
-  home(v(2, 3), 0.5, 1, 'Ayşe Teyze'),
-  home(h(2, 0), 0.5, -1, 'Mehmet Bey'),
+  home(v(2, 3), 0.5, 1, 'Lale Apt.'),
+  home(h(2, 0), 0.5, -1, 'Çınar Apt.'),
   home(v(4, 3), 0.5, -1, 'Student Flat', 'Öğrenci Evi'),
-  home(h(0, 2), 0.5, 1, 'Dentist Kemal', 'Dişçi Kemal'),
-  home(v(1, 2), 0.5, 1, 'Hayriye Hanım'),
-  home(h(2, 2), 0.6, 1, 'Plaza Guy', 'Plazacı Bey'),
+  home(h(0, 2), 0.5, 1, 'Clinic Apt.', 'Klinik Apt.'),
+  home(v(1, 2), 0.5, 1, 'Hayriye Apt.'),
+  home(h(2, 2), 0.6, 1, 'Plaza Residence', 'Plaza Rezidans'),
   home(v(3, 0), 0.5, -1, 'Kardeşler Apt.'),
-  home(h(1, 4), 0.5, 1, 'The Muhtar', 'Muhtar'),
-  home(h(3, 4), 0.5, 1, 'Cat Lady', 'Kedici Teyze'),
-  home(v(0, 3), 0.5, 1, 'Night Shift Nurse', 'Nöbetçi Hemşire'),
+  home(h(1, 4), 0.5, 1, "Muhtar's Office", 'Muhtarlık'),
+  home(h(3, 4), 0.5, 1, 'Kediler Apt.'),
+  home(v(0, 3), 0.5, 1, 'Hospital Housing', 'Hastane Lojmanı'),
   // Phase 2: one more shop of every new kind, plus a second grocer and bakery, spread over the four quadrants.
   shop(h(1, 3), 0.5, -1, 'florist', 'Nergis Florist', 'Çiçekçi Nergis'),
   shop(h(2, 1), 0.5, 1, 'electronics', 'Ferhat Electronics', 'Elektronik Ferhat'),
@@ -94,12 +95,12 @@ export const PLACES: PlaceDef[] = [
   // Sanayi repair stops on opposite corners of the map (south-east and north-west).
   mechanic(v(4, 0), 0.5, -1, "Cemal's Garage", 'Oto Tamir Cemal'),
   mechanic(h(0, 4), 0.5, 1, 'Master Rıza Repairs', 'Sanayi Usta Rıza'),
-  home(v(0, 0), 0.5, 1, 'Retired Colonel', 'Emekli Albay'),
-  home(h(1, 1), 0.6, 1, 'The Influencer', 'Fenomen Duygu'),
-  home(h(3, 0), 0.5, -1, 'Doorman Hüseyin', 'Kapıcı Hüseyin'),
-  home(v(2, 2), 0.6, 1, 'Crypto Bro', 'Kriptocu Abi'),
-  home(h(1, 3), 0.7, 1, 'Complaining Neighbour', 'Şikayetçi Komşu'),
-  home(h(2, 1), 0.25, -1, 'Wedding House', 'Düğün Evi'),
+  home(v(0, 0), 0.5, 1, 'Paşa Apt.'),
+  home(h(1, 1), 0.6, 1, 'Loft Residence', 'Loft Rezidans'),
+  home(h(3, 0), 0.5, -1, 'Huzur Apt.'),
+  home(v(2, 2), 0.6, 1, 'Moon Residence', 'Ay Rezidans'),
+  home(h(1, 3), 0.7, 1, 'Sessiz Apt.'),
+  home(h(2, 1), 0.25, -1, 'Wedding Hall', 'Düğün Salonu'),
 ];
 
 // Right lane of the x = 0 avenue, heading north, past the FTUE junction so a shift never opens on its lie.

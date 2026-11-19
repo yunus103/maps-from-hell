@@ -547,10 +547,32 @@
 @keyframes flip { from { opacity: 0; transform: rotateY(90deg) scale(0.9); } }
 .upd-face { position: absolute; inset: 0; filter: drop-shadow(0 0.35em 0 var(--ink)); }
 .upd-img { width: 100%; height: 100%; object-fit: contain; border-radius: 7% / 5.2%; } /* card art has opaque corners */
-.upd-img.fb {
-  display: grid; place-items: center; padding: 1em;
-  background: var(--orange); border: var(--line); border-radius: 1em;
-  font-size: 1.5em; font-weight: 900; color: var(--ink);
+/* Drawn stand-in for missing card art, in the cards' look: asphalt frame, title banner, icon on a sunburst */
+.upd-fb {
+  --acc: var(--orange);
+  padding: 4.5%; background: var(--asphalt); border: var(--line);
+  box-shadow: inset 0 0 0 0.25em #3c3a38;
+}
+.upd-fb-panel {
+  position: relative; height: 100%; overflow: hidden;
+  display: flex; flex-direction: column; align-items: center;
+  border: var(--line); border-radius: 6% / 4.5%;
+  background:
+    radial-gradient(circle at 50% 56%, var(--paper) 0 24%, transparent 24.5%),
+    repeating-conic-gradient(from 0deg at 50% 56%, var(--acc) 0 9deg, color-mix(in srgb, var(--acc) 72%, var(--paper)) 9deg 18deg);
+}
+.upd-fb-title {
+  position: relative; z-index: 1; margin: 7% -2% 0; width: 104%; padding: 0.35em 0.4em;
+  background: var(--paper); border-block: var(--line); color: var(--ink);
+  font-weight: 900; font-size: 8.5cqw; line-height: 1.05; text-transform: uppercase; text-align: center;
+  box-shadow: 0 0.18em 0 var(--ink);
+}
+.upd-fb-art { flex: 1; display: grid; place-items: center; width: 100%; }
+.upd-fb-ico { width: 52%; height: auto; filter: drop-shadow(0 0.25em 0 rgba(38, 34, 31, 0.55)); transform: rotate(-6deg); }
+.upd-fb-ico.fb { width: auto; font-size: 22cqw; }
+.upd-fb-brand {
+  margin-bottom: 6%; padding: 0.2em 0.8em; border-radius: 99px;
+  background: var(--ink); color: var(--cream); font-weight: 900; font-size: 5cqw; letter-spacing: 0.12em;
 }
 .upd-label {
   position: absolute; left: 6%; right: 6%; top: 3.5%; height: 24%;
@@ -618,9 +640,9 @@
 .slip-foot { margin: 0; font-size: 0.75em; text-align: center; opacity: 0.6; }
 .end-btns { display: flex; gap: 0.8em; flex-wrap: wrap; justify-content: center; }
 
-/* continued shift: never a record, so a rubber stamp over the stats says so */
+/* continued shift: never a record, so a rubber stamp in the header corner says so (clear of every row) */
 .stamp-unranked {
-  color: #44558c; font-size: 1.4em; right: auto; left: 3%; bottom: 29%; /* over the records rows */
+  color: #44558c; font-size: 1.1em; right: 0.5em; bottom: auto; top: 0.9em;
   transform: rotate(9deg); animation-name: stamp-unranked; animation-delay: 0.6s;
 }
 @keyframes stamp-unranked { from { opacity: 0; transform: rotate(9deg) scale(2.2); } }
@@ -873,7 +895,7 @@ html.is-touch .hud[data-phase="ftue"] .hud-sub, html.is-touch .hud[data-phase="d
   .stamp-red { font-size: 2em; }
   .end-btns { flex-direction: column; flex-wrap: nowrap; }
   .end-btns .btn { min-width: 11em; }
-  .stamp-unranked { font-size: 1.15em; left: auto; right: 5%; bottom: auto; top: 30%; }
+  .stamp-unranked { font-size: 0.95em; top: 52%; right: 6%; } /* the empty foot of the right column */
 
   .ticket-cust { font-size: 11px; margin-top: -0.1em; }
   .ticket-note { display: none; } /* no room on a phone; customer name stays */

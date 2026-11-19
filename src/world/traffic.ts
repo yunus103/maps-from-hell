@@ -30,6 +30,13 @@ const HONK_COOLDOWN = 6;
 const AI_DEADLOCK = 3; // blocked by AI this long, in a cycle of cars blocking each other → ignore AI for AI_IGNORE
 const AI_IGNORE = 2;
 const YIELD_MAX = 2; // s waiting for a busy junction
+// Kinematic cars can't be pushed: one the player blocks (often head-on at a curbside drop zone) backs off, and if
+// it is still stuck much later it respawns elsewhere once the player isn't looking at it.
+const STANDOFF = 3; // s blocked by the player before backing up
+const BACK_TIME = 2.5;
+const BACK_SPEED = 2; // m/s
+const STUCK_RESPAWN = 10; // s blocked by the player (unblocked time counts back at half speed)
+const SIGHT_DIST = 60; // m: farther than this, or behind the player, counts as unseen
 const HIT_IMPACT = 3;
 const HIT_REACH = 2.5; // player centre within this of the car's box
 const HIT_STOP = 3;
@@ -85,6 +92,8 @@ type AiCar = {
   pull: number; // 0 = lane, 1 = at the curb
   stopPhase: 0 | 1 | 2 | 3; // drive, pulling in, stopped, pulling out
   stopT: number;
+  backT: number; // s of backing up left
+  stuckT: number;
 };
 
 export interface Traffic {
@@ -129,7 +138,7 @@ export function createTraffic(scene: THREE.Scene, world: RAPIER.World, graph: Ro
       edge: 0, dir: 1, s: 0, turning: false, node: 0, next: 0, nextDir: 1, u: 0, turnLen: 1, p: [0, 0, 0, 0, 0, 0],
       speed: 0, cruise: 8, x: 0, z: 0, heading: 0,
       clear: 0, blockP: 0, blockA: 0, blocker: -1, ignoreAi: 0, yieldT: 0, hornCd: 0, hitStop: 0, nearCd: 0, nearPending: 0,
-      pull: 0, stopPhase: 0, stopT: rnd(DOLMUS_EVERY),
+      pull: 0, stopPhase: 0, stopT: rnd(DOLMUS_EVERY), backT: 0, stuckT: 0,
     });
   }
 
@@ -256,7 +265,7 @@ export function createTraffic(scene: THREE.Scene, world: RAPIER.World, graph: Ro
     }
     c.cruise = rnd(CRUISE);
     c.speed = c.cruise * 0.7;
-    c.clear = c.blockP = c.blockA = c.ignoreAi = c.yieldT = c.hitStop = c.nearPending = 0;
+    c.clear = c.blockP = c.blockA = c.ignoreAi = c.yieldT = c.hitStop = c.nearPending = c.backT = c.stuckT = 0;
     c.pull = 0;
     c.stopPhase = 0;
     c.stopT = rnd(DOLMUS_EVERY);
@@ -324,7 +333,14 @@ export function createTraffic(scene: THREE.Scene, world: RAPIER.World, graph: Ro
     if (live && gain > 0) playSfx('horn', gain);
   }
 
+  function seenBy(c: AiCar, car: CarSample) {
+    const dx = c.x - car.x;
+    const dz = c.z - car.z;
+    return dx * Math.sin(car.heading) + dz * Math.cos(car.heading) > 0 && Math.hypot(dx, dz) < SIGHT_DIST;
+  }
+
   function step(c: AiCar, dt: number, car: CarSample, live: boolean, out: CityEvent[]) {
+    if (c.stuckT > STUCK_RESPAWN && !seenBy(c, car)) spawn(c);
     const e = edges[c.edge];
     c.clear = Math.max(0, c.clear - dt);
     c.ignoreAi = Math.max(0, c.ignoreAi - dt);
@@ -361,6 +377,11 @@ export function createTraffic(scene: THREE.Scene, world: RAPIER.World, graph: Ro
       c.blockA = 0;
     }
     if (blockedP || (blockedA && c.ignoreAi <= 0)) c.clear = RESUME;
+    if (c.blockP > STANDOFF && c.backT <= 0 && !c.turning && c.s > sStart(e, c.dir) + 1) {
+      c.backT = BACK_TIME;
+      c.blockP = 0;
+    }
+    c.stuckT = Math.max(0, c.stuckT + (blockedP ? dt : -dt / 2));
 
     // ---- player contact ----
     const gap = boxDist(c, car.x, car.z);
@@ -426,7 +447,11 @@ export function createTraffic(scene: THREE.Scene, world: RAPIER.World, graph: Ro
     c.speed = c.speed < target ? Math.min(target, c.speed + ACCEL * dt) : Math.max(target, c.speed - DECEL * dt);
 
     // ---- move ----
-    if (c.turning) {
+    if (c.backT > 0) {
+      c.backT -= dt;
+      c.speed = 0;
+      c.s = Math.max(sStart(e, c.dir), c.s - BACK_SPEED * dt);
+    } else if (c.turning) {
       c.u += (c.speed * dt) / c.turnLen;
       if (c.u >= 1) endTurn(c);
     } else {

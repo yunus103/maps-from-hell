@@ -51,6 +51,7 @@ const REACT_MIN = -0.5;
 const REACT_MAX = 0.3;
 const REACT_DECAY = 0.04; // per s back toward 0
 const FIGURE_OUT = 3; // m from the place zone to the sidewalk
+const CRASH_TTL = 4; // s a crash line may wait out nav lines: chaos is when it should land
 
 type LineKey =
   | 'greet' | 'left' | 'right' | 'straight' | 'shortcut' | 'wrong' | 'agree' | 'toldYou' | 'smug' | 'sorry'
@@ -400,7 +401,8 @@ interface Call {
   costs: Map<EdgeId, number>;
   bestCost: number;
   text: L10n | null; // spoken after YOLDAŞ's line
-  spoken: boolean;
+  spoken: boolean; // handed to the voice
+  heard: boolean; // the voice actually played it: only a heard call can cost or earn a tip
   reached: boolean; // the car has been inside the junction box
 }
 
@@ -432,11 +434,11 @@ export function createPassengers(
   let chatterT = CHATTER_MIN;
   const pub: PassengerView = { id: 'teyze', name: TEYZE, icon: '', aboard: false, mood: 1, wants: null, tipDelta: 0 };
 
-  function speak(key: LineKey, critical = false): boolean {
+  function speak(key: LineKey, critical = false, ttl?: number): boolean {
     if (!ride) return false;
     const lines = ride.def.lines[key];
     if (!lines.length) return false;
-    voice.sayText(pickRand(lines), { speaker: ride.def.speaker, priority: 'react', critical });
+    voice.sayText(pickRand(lines), { speaker: ride.def.speaker, priority: 'react', critical, ttl });
     talkCd = TALK_GAP;
     return true;
   }
@@ -473,7 +475,7 @@ export function createPassengers(
     if (pos.kind !== 'edge' || !incident(pos.edge, c.node)) return;
     const n = c.node;
     const entry = pos.edge;
-    const none: Call = { node: n, entry, exit: -1, turn: 'straight', good: false, costs: new Map(), bestCost: 0, text: null, spoken: true, reached: false };
+    const none: Call = { node: n, entry, exit: -1, turn: 'straight', good: false, costs: new Map(), bestCost: 0, text: null, spoken: true, heard: false, reached: false };
     call = none;
     const exits = graph.nodes[n].edges.filter((x) => x !== entry);
     if (exits.length < 2 || rand() >= ride.def.callChance) return;
@@ -508,24 +510,24 @@ export function createPassengers(
     const tell = good ? (rand() < TELL_SHORTCUT ? 'shortcut' : null) : rand() < TELL_1987 ? 'wrong' : null;
     const tail = tell ? pickRand(ride.def.lines[tell]) : null;
     const text = tail ? { en: `${dir.en} ${tail.en}`, tr: `${dir.tr} ${tail.tr}` } : dir;
-    call = { node: n, entry, exit, turn, good, costs, bestCost, text, spoken: false, reached: false };
+    call = { node: n, entry, exit, turn, good, costs, bestCost, text, spoken: false, heard: false, reached: false };
   }
 
   // After YOLDAŞ's own line, so the two never talk over each other and the nav line is never delayed.
   function speakCall(c: Call) {
     if (!ride || !c.text) return;
     c.spoken = true;
-    voice.sayText(c.text, { speaker: ride.def.speaker, priority: 'react' });
+    voice.sayText(c.text, { speaker: ride.def.speaker, priority: 'react', onPlay: () => (c.heard = true) });
     talkCd = TALK_GAP;
     if (rand() < YOLDAS_RETORT) yoldas(RETORTS);
   }
 
   function resolve(c: Call, x: EdgeId) {
     call = null;
-    if (c.exit < 0) return;
+    if (c.exit < 0 || !c.heard) return; // a call the voice dropped never happened for the player
     const tookGood = (c.costs.get(x) ?? Infinity) <= c.bestCost + TIE;
     if (x === c.exit && c.good) {
-      speak('smug');
+      speak('smug', true);
       tip(Math.round(RIGHT_TIP * passengerMul));
       nudge(0.25);
       if (rand() < YOLDAS_SULK) yoldas(SULKS);
@@ -533,7 +535,7 @@ export function createPassengers(
       if (graph.edges[x].fake) blamedFake = x;
       else speak('sorry');
     } else if (c.good && !tookGood) {
-      speak('toldYou');
+      speak('toldYou', true);
       tip(-Math.round(IGNORED_TIP * passengerMul));
       nudge(-0.2);
     }
@@ -575,7 +577,7 @@ export function createPassengers(
     }
     if (cs.impact >= CRASH_IMPACT && crashCd <= 0) {
       crashCd = CRASH_GAP;
-      speak('crash');
+      speak('crash', false, CRASH_TTL);
       nudge(-0.3);
     }
     const kmh = cs.speed * 3.6;
@@ -669,7 +671,8 @@ export function createPassengers(
         speak(e.result.stars >= 3 && ride.tipDelta >= 0 ? 'byeGood' : 'byeBad', true);
         call = null;
       } else if (e.type === 'cancelled' && ride.aboard) {
-        speak('cancel', true);
+        // After a cancel that cost the shift, the continue prompt has already spoken: don't talk over it.
+        if (shift.state.phase === 'driving') speak('cancel', true);
         call = null;
       }
     },
@@ -681,7 +684,7 @@ export function createPassengers(
       pub.icon = `ui/people/${ride.id}.png`;
       pub.aboard = ride.aboard;
       pub.mood = Math.min(1, Math.max(0, 0.75 * (comfort / 100) + 0.15 + ride.react));
-      pub.wants = ride.aboard && call && call.exit >= 0 ? call.turn : null;
+      pub.wants = ride.aboard && call && call.exit >= 0 && call.heard ? call.turn : null;
       pub.tipDelta = ride.tipDelta;
       return pub;
     },

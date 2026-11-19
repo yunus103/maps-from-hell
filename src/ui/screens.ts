@@ -4,6 +4,12 @@ import { S } from './strings';
 import { el, money, pic } from './hud';
 
 const ICON = 'ui/icons/';
+// Update cards whose art is missing get a drawn card: an icon on the accent sunburst (default: report.svg, orange).
+const UPD_FB: Partial<Record<string, { icon: string; accent: string }>> = {
+  drift_analytics: { icon: 'drift.svg', accent: 'var(--orange)' },
+  passenger_rating: { icon: 'passenger.svg', accent: 'var(--teal)' },
+  live_traffic: { icon: 'traffic.svg', accent: 'var(--gold)' },
+};
 // A new screen ignores input this long, so a key mashed for the previous screen can't pick blind here.
 const INPUT_GRACE_MS = 600;
 
@@ -204,6 +210,18 @@ export function createScreens(root: HTMLElement, actions: ScreenActions): Screen
   }
 
   // ---------- YOLDAŞ update ----------
+  function fallbackCard(u: UpdateDef): HTMLElement {
+    const fb = UPD_FB[u.id] ?? { icon: 'report.svg', accent: 'var(--orange)' };
+    const card = el('div', 'upd-img upd-fb');
+    card.style.setProperty('--acc', fb.accent);
+    const panel = el('div', 'upd-fb-panel', card);
+    el('div', 'upd-fb-title', panel, tx(u.name));
+    const art = el('div', 'upd-fb-art', panel);
+    pic(ICON + fb.icon, '📍', 'upd-fb-ico', art);
+    el('div', 'upd-fb-brand', panel, 'YOLDAŞ');
+    return card;
+  }
+
   function buildUpdate(s: ShiftState) {
     const sc = screen('scr-update');
     const head = el('div', 'scr-head', sc);
@@ -223,9 +241,12 @@ export function createScreens(root: HTMLElement, actions: ScreenActions): Screen
       const img = el('img', 'upd-img', front);
       img.alt = tx(u.name);
       img.src = u.card;
-      img.onerror = () => img.replaceWith(el('div', 'upd-img fb', undefined, tx(u.name)));
       // The card art has its English title baked in: cover it with a localised label.
-      if (getLang() !== 'en') el('div', 'upd-label', front, tx(u.name));
+      const label = getLang() !== 'en' ? el('div', 'upd-label', front, tx(u.name)) : null;
+      img.onerror = () => {
+        label?.remove();
+        img.replaceWith(fallbackCard(u));
+      };
       const info = el('div', 'upd-info', c);
       el('kbd', 'kbd', info, String(i + 1));
       el('div', 'upd-name', info, tx(u.name));
@@ -317,7 +338,8 @@ export function createScreens(root: HTMLElement, actions: ScreenActions): Screen
     if (sum.driftCash > 0) row(tx(S.row_drift_cash), money(sum.driftCash));
     if (sum.repairs > 0) row(tx(S.row_mechanic), `−${money(sum.repairs)}`, 'neg');
     row(tx(S.row_repair), `−${money(sum.repairBill)}`, sum.repairBill > 0 ? 'neg' : '');
-    row(tx(S.row_total), money(sum.total), 'total');
+    // Repairs can outrun the takings: show the real net, in red, rather than a flat ₺0.
+    row(tx(S.row_total), sum.total < 0 ? `−${money(-sum.total)}` : money(sum.total), sum.total < 0 ? 'total neg' : 'total');
     row(tx(S.row_rating), `★ ${rating.toFixed(1)}`, rating < 3 ? 'neg' : '');
     // Unranked shifts never set records: the stored best is shown as is.
     const record = !sum.unranked && sum.total > 0 && sum.total >= sum.best;

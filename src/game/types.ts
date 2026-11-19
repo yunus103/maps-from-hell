@@ -126,6 +126,7 @@ export interface SayOptions {
   priority?: SayPriority; // default 'react'
   params?: Record<string, string | number>;
   hesitant?: boolean; // slower, lower rate (tell)
+  ttl?: number; // s a minor queued line survives, nav cuts included (default: the next nav line or STALE_REACT drops it)
 }
 
 export type SpeakerKind = 'yoldas' | 'passenger' | 'customer' | 'mechanic';
@@ -146,6 +147,8 @@ export interface SayTextOptions {
   priority?: SayPriority; // default 'react'
   critical?: boolean; // like a CRITICAL LineId: waits behind anything, never dropped as stale
   params?: Record<string, string | number>;
+  ttl?: number; // see SayOptions.ttl
+  onPlay?: () => void; // the line started (spoken or shown as a subtitle); never called if it was dropped
 }
 
 export interface Subtitle {
@@ -161,6 +164,7 @@ export interface Voice {
   setModifiers(m: ShiftModifiers): void;
   setPaused(p: boolean): void;
   stop(): void; // cancel speech and subtitle
+  flush(): void; // context switch (cancel, continue): cut the current line and drop queued minor lines
   drop(id: LineId): void; // forget a queued line that is out of date
   update(dt: number): void; // expires subtitles
 }
@@ -368,6 +372,7 @@ export type ShiftEvent =
   | { type: 'mods'; mods: ShiftModifiers }
   | { type: 'difficulty'; level: number }
   | { type: 'placeCar'; spawn: Spawn }
+  | { type: 'respawn' } // continue accepted: car back on the nearest road, short damage grace; the order stays
   | { type: 'pickedUp' }
   | { type: 'delivered'; result: DeliveryResult }
   | { type: 'cancelled' }

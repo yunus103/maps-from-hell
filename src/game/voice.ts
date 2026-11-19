@@ -38,6 +38,7 @@ interface Request {
   free: { text: L10n; o: SayTextOptions } | null;
   opts: SayOptions;
   critical: boolean; // CRITICAL line or sayText({ critical: true })
+  ttl: number; // s it may wait queued through nav cuts; 0 = default rules
   lang: Lang;
   wait: number; // s spent queued
   seq: number; // order of say() calls
@@ -148,7 +149,7 @@ export function createVoice(): Voice {
       return play(n);
     }
     let q = queue.shift();
-    while (q && !q.critical && q.wait > STALE_REACT) q = queue.shift();
+    while (q && !q.critical && q.wait > (q.ttl || STALE_REACT)) q = queue.shift();
     if (q) play(q);
   }
 
@@ -193,7 +194,7 @@ export function createVoice(): Voice {
     synth?.cancel();
     if (navWaiting) navWaiting.wait = 0; // its wait limit applies to the line now playing
     // Minor lines from before a command ("Recalculating…") are out of date once it is spoken.
-    if (priority === 'nav') queue = queue.filter((q) => q.critical || q.seq > req.seq);
+    if (priority === 'nav') queue = queue.filter((q) => q.critical || q.seq > req.seq || q.wait < q.ttl);
 
     const voice = !muted && unlocked ? voiceFor(lang, speaker?.voiceRank) : null;
     const readTime = Math.max(1, text.length / READ_CHARS_PER_S);
@@ -217,6 +218,7 @@ export function createVoice(): Voice {
       token,
     };
     cur = p;
+    free?.onPlay?.();
 
     if (!voice || !synth) {
       if (!unlocked && !muted && priority === 'nav') pendingNav = { ...req, token, at: performance.now() };
@@ -238,7 +240,7 @@ export function createVoice(): Voice {
   const betaFlip = (lang: Lang): Lang => (mods.betaVoice && Math.random() < BETA_CHANCE ? (lang === 'en' ? 'tr' : 'en') : lang);
 
   function say(id: LineId, opts: SayOptions = {}) {
-    submit({ id, free: null, opts, critical: CRITICAL.has(id), lang: betaFlip(getLang()), wait: 0, seq: seq++ });
+    submit({ id, free: null, opts, critical: CRITICAL.has(id), ttl: opts.ttl ?? 0, lang: betaFlip(getLang()), wait: 0, seq: seq++ });
   }
 
   // Same queue and rules as say(). The Beta Voice language flip only applies to YOLDAŞ.
@@ -246,7 +248,7 @@ export function createVoice(): Voice {
     const s = o.speaker;
     const lang = s && s.kind !== 'yoldas' ? (s.lang ?? getLang()) : betaFlip(s?.lang ?? getLang());
     const opts: SayOptions = { priority: o.priority, params: o.params };
-    submit({ id: null, free: { text, o }, opts, critical: !!o.critical, lang, wait: 0, seq: seq++ });
+    submit({ id: null, free: { text, o }, opts, critical: !!o.critical, ttl: o.ttl ?? 0, lang, wait: 0, seq: seq++ });
   }
 
   function submit(req: Request) {
@@ -295,6 +297,13 @@ export function createVoice(): Voice {
     },
     drop(id) {
       queue = queue.filter((q) => q.id !== id);
+    },
+    flush() {
+      token++;
+      synth?.cancel();
+      cur = null;
+      queue = queue.filter((q) => q.critical);
+      navWaiting = null;
     },
     stop() {
       token++;

@@ -18,7 +18,12 @@ const NEAR_MISS_PED = 200;
 const NEAR_MISS_SOLO = 150; // no chain running: banks on its own
 const NEAR_MISS_LINK = 0.5; // s added to the link window
 const PARK_BONUS = 800; // added to the chain, so the bank's chain multiplier makes it 800 × chain
-const PARK_WINDOW = 2.5; // s since the last drift ended
+// The park bonus wants a real drift into the stop: this long at this angle and speed, ending near the zone.
+const PARK_WINDOW = 2; // s from the last qualifying drift frame to the pickup/delivery
+const PARK_MIN_DEG = 20;
+const PARK_MIN_SPEED = 7; // m/s
+const PARK_MIN_TIME = 0.5; // s at angle and speed within the current drift
+const PARK_NEAR = 15; // m from the zone centre
 const ROUTE_STYLE_BONUS = 600;
 const ROUTE_STYLE_WINDOW = 3; // s between drifting through the called junction and the decision
 const RISK_FRAGILE = 1.5;
@@ -63,7 +68,8 @@ export function createDriftScore(graph: RoadGraph, voice: Voice, rand: () => num
   let points = 0;
   let chain = 1;
   let linkLeft = 0;
-  let lastDriftEnd = -Infinity;
+  let parkReal = 0; // s of the current drift at park angle and speed
+  let parkAt = -Infinity; // last time a qualifying drift was near the order's zone
   let bonusMul = 1;
   let shiftTotal = 0;
   let cmdNode: NodeId = -1; // node of YOLDAŞ's latest command
@@ -140,6 +146,13 @@ export function createDriftScore(graph: RoadGraph, voice: Voice, rand: () => num
     return o.offer.package === 'fragile' ? RISK_FRAGILE : o.offer.package === 'heavy' ? RISK_HEAVY : 1;
   }
 
+  function nearZone(car: CarSample, s: ShiftState): boolean {
+    const o = s.order;
+    if (!o) return false;
+    const p = o.phase === 'toPickup' ? o.offer.pickup : o.offer.dropoff;
+    return Math.hypot(car.x - p.x, car.z - p.z) < PARK_NEAR;
+  }
+
   function update(dt: number, car: CarSample, state: ShiftState): DriftEvent[] {
     const phase = state.phase;
     if (phase === 'paused') return flush(); // chain frozen until resume
@@ -159,6 +172,7 @@ export function createDriftScore(graph: RoadGraph, voice: Voice, rand: () => num
       if (!drifting) {
         drifting = true;
         segTime = 0;
+        parkReal = 0;
         linked = active;
         active = true;
       }
@@ -175,6 +189,8 @@ export function createDriftScore(graph: RoadGraph, voice: Voice, rand: () => num
           }
         }
         const absDeg = Math.abs(car.beta) * RAD2DEG;
+        if (absDeg >= PARK_MIN_DEG && car.speed >= PARK_MIN_SPEED) parkReal += dt;
+        if (parkReal >= PARK_MIN_TIME && nearZone(car, state)) parkAt = now;
         points += absDeg * car.speed * dt * (1 + LONG_DRIFT_GAIN * Math.min(car.driftTime, LONG_DRIFT_CAP));
         if (cmdNode >= 0) {
           const pos = graph.locate(car.x, car.z);
@@ -187,10 +203,7 @@ export function createDriftScore(graph: RoadGraph, voice: Voice, rand: () => num
     } else if (drifting) {
       drifting = false;
       linked = false;
-      if (active) {
-        linkLeft = LINK_TIME;
-        lastDriftEnd = now;
-      }
+      if (active) linkLeft = LINK_TIME;
     } else if (active) {
       linkLeft -= dt;
       if (linkLeft <= 0) bank();
@@ -214,7 +227,8 @@ export function createDriftScore(graph: RoadGraph, voice: Voice, rand: () => num
 
   function onShiftEvent(e: ShiftEvent) {
     if (!scoring || (e.type !== 'pickedUp' && e.type !== 'delivered')) return;
-    if (!active && now - lastDriftEnd >= PARK_WINDOW) return;
+    if (now - parkAt >= PARK_WINDOW) return;
+    parkAt = -Infinity;
     bonus('park', PARK_BONUS, PARK_BONUS);
     if (active) bank();
     say('park');
@@ -246,7 +260,7 @@ export function createDriftScore(graph: RoadGraph, voice: Voice, rand: () => num
     shiftTotal = 0;
     cmdNode = -1;
     styleNode = -1;
-    lastDriftEnd = -Infinity;
+    parkAt = -Infinity;
     pending.length = 0;
   }
 

@@ -45,7 +45,6 @@ export function createPassengerCard(root: HTMLElement): { update(v: PassengerVie
   wantImg.onerror = () => wantImg.classList.add('missing');
   const wantFb = el('span', 'pcard-want-fb', bubble);
 
-  let face: HTMLElement | null = null;
   let id: PassengerId | null = null;
   let lang = getLang();
   let shown = false;
@@ -66,8 +65,10 @@ export function createPassengerCard(root: HTMLElement): { update(v: PassengerVie
     id = v.id;
     lang = getLang();
     const def = PASSENGERS[v.id];
-    face?.remove();
-    face = pic(v.icon, def.emoji, 'pcard-face', faceBox);
+    // pic() swaps a missing portrait for an emoji span, so clear the whole box, not just the last <img>.
+    faceBox.replaceChildren();
+    pic(v.icon, def.emoji, 'pcard-face', faceBox);
+    faceBox.style.setProperty('--tint', `#${def.color.toString(16).padStart(6, '0')}`);
     name.textContent = tx(def.name);
     tag.textContent = tx(def.tagline);
     waitIco.textContent = def.emoji;
@@ -87,14 +88,14 @@ export function createPassengerCard(root: HTMLElement): { update(v: PassengerVie
       if (v.id !== id || getLang() !== lang) build(v);
 
       if (v.mood !== mood) {
-        if (mood >= 0 && mood - v.mood > MOOD_DROP_SHAKE && face) kick(face, 'shake');
+        if (mood >= 0 && mood - v.mood > MOOD_DROP_SHAKE) kick(faceBox, 'shake');
         mood = v.mood;
         moodFill.style.setProperty('--v', mood.toFixed(3));
         const f = moodFace(mood);
         if (f !== face01) moodIco.textContent = face01 = f;
       }
       if (v.tipDelta !== tip) {
-        if (!Number.isNaN(tip) && face) kick(face, v.tipDelta > tip ? 'bounce' : 'shake');
+        if (!Number.isNaN(tip)) kick(faceBox, v.tipDelta > tip ? 'bounce' : 'shake');
         tip = v.tipDelta;
         tipText.textContent = tip === 0 ? money(0) : `${tip > 0 ? '+' : '−'}${money(Math.abs(tip))}`;
         tipText.classList.toggle('up', tip > 0);
