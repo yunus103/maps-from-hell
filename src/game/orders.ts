@@ -119,15 +119,15 @@ export const ITEMS: ItemDef[] = [
   passenger('student', '🎧', 'Student (ride)', 'Öğrenci (yolcu)'),
 ];
 
-// Shown on the ticket as the customer; WS-D's passenger cards use their own names.
+// Shown on the ticket as the customer; must match the names in passengers.ts PASSENGERS.
 export const PASSENGER_NAMES: Record<PassengerId, L10n> = {
   teyze: { en: 'Auntie Ayşe', tr: 'Ayşe Teyze' },
-  abi: { en: 'Kaan Abi', tr: 'Kaan Abi' },
-  plaza: { en: 'Selim Bey', tr: 'Selim Bey' },
-  tourist: { en: 'Kevin (tourist)', tr: 'Kevin (turist)' },
-  grandpa: { en: 'Grandpa Rıfat', tr: 'Rıfat Dede' },
-  bride: { en: 'Derya (bride)', tr: 'Gelin Derya' },
-  student: { en: 'Ece (student)', tr: 'Öğrenci Ece' },
+  abi: { en: 'Emre Abi', tr: 'Emre Abi' },
+  plaza: { en: 'Office Guy Kerem', tr: 'Plazacı Kerem' },
+  tourist: { en: 'Tourist Steve', tr: 'Turist Steve' },
+  grandpa: { en: 'Grandpa Nuri', tr: 'Nuri Dede' },
+  bride: { en: 'Bride Selin', tr: 'Gelin Selin' },
+  student: { en: 'Student Deniz', tr: 'Öğrenci Deniz' },
 };
 
 // Emoji for items whose icon is an image path (toasts take an emoji or a ui/icons file).

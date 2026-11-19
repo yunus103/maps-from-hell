@@ -12,7 +12,7 @@ import { setAudioPaused, updateAudio } from './audio';
 import { PRESETS, createLighting } from './lighting';
 import { createPost } from './post';
 import { MOBILE, QUALITY } from './quality';
-import type { CarSample, GamePhase, LineId, RoadGraph, ScreenActions } from './game/types';
+import type { CarSample, CityEvent, GamePhase, LineId, RoadGraph, ScreenActions } from './game/types';
 import { getLang, onLangChange, setLang } from './game/lang';
 import { createVoice } from './game/voice';
 import { createNavigator } from './game/navigator';
@@ -23,6 +23,16 @@ import { createHud } from './ui/hud';
 import { createScreens } from './ui/screens';
 import { createTouchControls, isTouch } from './ui/touch';
 import { createFullscreenButton, createStartGate } from './ui/fullscreen';
+import { createCity } from './world/city';
+import { createDriftScore } from './game/drift';
+import { createMechanic } from './game/mechanic';
+import { createPackageFx } from './game/packageFx';
+import { createPassengers } from './game/passengers';
+import { createLoad } from './game/load';
+import { showRewardedAd } from './game/ads';
+import { createDriftMeter } from './ui/driftMeter';
+import { createPassengerCard } from './ui/passengerCard';
+import { createMechanicPrompt } from './ui/mechanicPrompt';
 
 const PHYSICS_DT = 1 / 60;
 // Caps catch-up steps after a stall (tab switch, breakpoint) so physics doesn't spiral.
@@ -32,7 +42,8 @@ const params = new URLSearchParams(location.search);
 const DEV = params.has('dev');
 const DRIVE_PHASES: GamePhase[] = ['ftue', 'driving', 'free'];
 // Phases whose lighting follows the shift clock; the others keep the lil-gui preset.
-const CLOCK_PHASES: GamePhase[] = ['ftue', 'board', 'driving', 'update'];
+const CLOCK_PHASES: GamePhase[] = ['ftue', 'board', 'driving', 'update', 'continue'];
+const NO_CITY_EVENTS: CityEvent[] = [];
 const CRASH_LINES: LineId[] = ['re_crash_1', 're_crash_2', 're_crash_3'];
 const CRASH_LINE_COOLDOWN = 8; // s; also starts on a fake-road hit, which has its own line
 const FAKE_HIT_DAMAGE_MUL = 0.5;
@@ -178,6 +189,12 @@ function createGame(graph: RoadGraph) {
   const shift = createShift(graph, voice);
   const damage = createDamage(scene, car.model.group, car.model.paint);
   const markers = createMarkers(scene, camera);
+  const city = createCity(scene, world, graph);
+  const drift = createDriftScore(graph, voice);
+  const mechanic = createMechanic(scene, graph, voice, shift);
+  const pkgFx = createPackageFx(voice);
+  const passengers = createPassengers(scene, graph, voice, shift);
+  const load = createLoad(car.model.group);
   const actions: ScreenActions = {
     startShift: () => {
       voice.stop();
@@ -190,6 +207,8 @@ function createGame(graph: RoadGraph) {
     },
     pickOffer: (i) => shift.pickOffer(i),
     pickUpdate: (i) => shift.pickUpdate(i),
+    continueShift: () => void showRewardedAd().then((ok) => ok && shift.acceptContinue()),
+    declineContinue: () => shift.declineContinue(),
     resume: () => shift.setPaused(false),
     quitToTitle: () => {
       voice.stop();
@@ -199,9 +218,15 @@ function createGame(graph: RoadGraph) {
   };
   // The HUD goes in first so the screens layer sits on top of it.
   const hud = createHud(uiRoot);
+  const driftMeter = createDriftMeter(uiRoot);
+  const passengerCard = createPassengerCard(uiRoot);
+  const mechPrompt = createMechanicPrompt(uiRoot);
   const screens = createScreens(uiRoot, actions);
   nav.reset();
-  return { voice, nav, shift, damage, markers, hud, screens };
+  return {
+    voice, nav, shift, damage, markers, city, drift, mechanic, pkgFx, passengers, load,
+    hud, driftMeter, passengerCard, mechPrompt, screens,
+  };
 }
 const game = graph ? createGame(graph) : null;
 const touchUi = createTouchControls(document.getElementById('ui')!, () => game?.shift.setPaused(true));
@@ -223,7 +248,7 @@ document.addEventListener('visibilitychange', () => {
   if (document.hidden && game) game.shift.setPaused(true);
 });
 
-if (DEV) Object.assign(window, { __mfh: { game, car, renderer, graph, lighting } });
+if (DEV) Object.assign(window, { __mfh: { game, car, renderer, graph, lighting, post, scene } });
 
 const fwd = new THREE.Vector3();
 function sampleCar(impact: number): CarSample {
@@ -261,18 +286,32 @@ function onPhase(phase: GamePhase) {
   }
 }
 
-// Everything after physics: damage, navigator, shift, and routing of shift events to their consumers.
+// FTUE teaches the route without traffic; everything else follows the shift's Live Traffic modifier.
+function syncDensity() {
+  const { shift, city } = game!;
+  city.setDensity(shift.state.phase === 'ftue' ? 0 : shift.state.mods.trafficMul);
+}
+
+// Everything after physics: city, damage, navigator, drift, passengers, package feedback, mechanic, shift, and
+// routing of shift events to their consumers.
 function updateGame(dt: number, impact: number) {
   if (!game) return;
-  const { voice, nav, shift, damage, markers, hud, screens } = game;
+  const { voice, nav, shift, damage, markers, city, drift, mechanic, pkgFx, passengers, load } = game;
+  const { hud, driftMeter, passengerCard, mechPrompt, screens } = game;
   const sample = sampleCar(impact);
+  const phase = shift.state.phase;
+  const live = DRIVE_PHASES.includes(phase);
+  // The city keeps moving behind menus; it freezes with the pause screen and has nothing to show on the title.
+  const cityEvents = phase === 'paused' || phase === 'title' ? NO_CITY_EVENTS : city.update(dt, sample, live);
   crashLineCooldown -= dt;
-  if (DRIVE_PHASES.includes(shift.state.phase)) {
+  if (live) {
     let lost = damage.update(dt, impact, shift.state.health);
     let fakeHit = false;
     for (const e of nav.update(dt, sample)) {
       if (e.type === 'fakeRoadHit') fakeHit = true;
       shift.onNavEvent(e);
+      drift.onNavEvent(e);
+      passengers.onNavEvent(e);
       hud.event(e);
     }
     // Obeying a lie into a fake road is the joke, not a punishment.
@@ -290,9 +329,24 @@ function updateGame(dt: number, impact: number) {
   } else {
     damage.update(dt, 0, shift.state.health);
   }
+  for (const e of cityEvents) {
+    drift.onCityEvent(e);
+    if (e.type === 'pedHit') shift.penalty('pedestrian'); // shift ignores it outside 'driving'
+  }
+  for (const e of drift.update(dt, sample, shift.state)) {
+    driftMeter.event(e);
+    if (e.type === 'driftBank') shift.addDrift(e.total, e.chain);
+  }
+  passengers.update(dt, sample, shift.state);
+  for (const fx of pkgFx.update(dt, sample, shift.state)) hud.event(fx);
+  for (const fx of mechanic.update(dt, sample, shift.state)) hud.event(fx);
+  load.update(dt, impact);
   shift.update(dt, sample);
   for (const e of shift.drain()) {
     hud.event(e);
+    drift.onShiftEvent(e);
+    passengers.onShiftEvent(e);
+    for (const fx of pkgFx.onShiftEvent(e, shift.state)) hud.event(fx);
     switch (e.type) {
       case 'target':
         nav.setTarget(e.place, e.kind);
@@ -304,6 +358,7 @@ function updateGame(dt: number, impact: number) {
       case 'mods':
         nav.setModifiers(e.mods);
         voice.setModifiers(e.mods);
+        syncDensity();
         break;
       case 'difficulty':
         nav.setDifficulty(e.level);
@@ -311,20 +366,36 @@ function updateGame(dt: number, impact: number) {
       case 'placeCar':
         car.place(e.spawn.x, e.spawn.z, e.spawn.heading);
         damage.reset();
+        load.setLoad(null);
+        drift.reset();
+        passengers.reset();
+        city.reset(e.spawn.x, e.spawn.z);
         accumulator = 0;
+        break;
+      case 'pickedUp':
+        load.setLoad(shift.state.order?.offer.package ?? null);
+        break;
+      case 'delivered':
+      case 'cancelled':
+        load.setLoad(null);
         break;
       case 'phase':
         onPhase(e.phase);
+        syncDensity();
         break;
     }
   }
   voice.update(dt);
   markers.update(dt);
-  if (CLOCK_PHASES.includes(shift.state.phase)) {
+  const after = shift.state.phase;
+  if (CLOCK_PHASES.includes(after)) {
     clockLit = true;
     lighting.setTimeOfDay(shift.state.clock01);
   }
   hud.update({ nav: nav.view(), subtitle: voice.current(), shift: shift.state, speedKmh: car.stats.speed * 3.6 });
+  driftMeter.update(drift.view(), after);
+  passengerCard.update(passengers.view(), after);
+  mechPrompt.update(mechanic.view(), after);
   screens.render(shift.state);
 }
 
@@ -353,6 +424,7 @@ renderer.setAnimationLoop((time) => {
     accumulator = Math.min(accumulator + dt, PHYSICS_DT * MAX_STEPS_PER_FRAME);
     while (accumulator >= PHYSICS_DT) {
       car.step(input, PHYSICS_DT);
+      game?.load.step(car.body, car.stats, input, PHYSICS_DT);
       impact = Math.max(impact, car.stats.impact);
       world.step();
       accumulator -= PHYSICS_DT;
@@ -377,9 +449,11 @@ renderer.setAnimationLoop((time) => {
   if (!devVisible) return;
   const s = car.stats;
   const st = game?.shift.state;
+  const dv = game?.drift.view();
   debug.update(
     dt,
     (st ? `\nphase ${st.phase}  ${st.clockText}  x${st.multiplier}  hp ${Math.round(st.health)}` : '') +
+      (dv ? `\ndrift x${dv.chain} ${Math.round(dv.points)}  total ${dv.shiftTotal}` : '') +
       `\nspeed ${Math.round(s.speed * 3.6)} km/h  gear ${s.gear}\n` +
       `angle ${Math.round(s.beta * RAD_TO_DEG)}°\n` +
       `slip  F ${Math.round(s.frontSlip * RAD_TO_DEG)}° R ${Math.round(s.rearSlip * RAD_TO_DEG)}°\n` +

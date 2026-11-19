@@ -48,8 +48,6 @@ const RECALC_SHOW = 1.5;
 const FAKE_HIT_RADIUS = 9;
 const FAKE_HIT_IMPACT = 3;
 const FAKE_HIT_COOLDOWN = 2;
-const DRIFT_CHATTER_TIME = 4;
-const DRIFT_CHATTER_CHANCE = 0.3;
 const IGNORE_LINE_CHANCE = 0.4;
 const DODGE_LINE_CHANCE = 0.3;
 const SIGH_AFTER = 3;
@@ -105,7 +103,6 @@ export function createNavigator(graph: RoadGraph, voice: Voice, rand: () => numb
   let quiet = 0;
   let fakeQuiet = 0;
   let fakeCooldown = 0;
-  let lastDrift = 0;
   let preciseHold = 0;
   let sighCooldown = 0;
   let hidden: EdgeId | null = null; // fake street whose dead end is not revealed yet
@@ -560,10 +557,6 @@ export function createNavigator(graph: RoadGraph, voice: Voice, rand: () => numb
       carZ = car.z;
 
       checkFakeHit(car);
-      if (lastDrift < DRIFT_CHATTER_TIME && car.driftTime >= DRIFT_CHATTER_TIME && rand() < DRIFT_CHATTER_CHANCE) {
-        voice.say('re_drift_3', { priority: 'chatter' });
-      }
-      lastDrift = car.driftTime;
 
       track(dt, car);
       if (target) speakCheck();
