@@ -12,6 +12,7 @@ declare module 'n8ao' {
       halfRes: boolean;
       depthAwareUpsampling: boolean;
     };
+    autoDetectTransparency: boolean;
     setQualityMode(mode: 'Performance' | 'Low' | 'Medium' | 'High' | 'Ultra'): void;
   }
 }

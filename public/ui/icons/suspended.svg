@@ -1,0 +1,10 @@
+<svg viewBox="0 0 1024 1024" xmlns="http://www.w3.org/2000/svg" width="1024" height="1024">
+  <title>Suspended ID badge</title>
+  <g stroke="#504d4b" stroke-width="26" stroke-linejoin="round" stroke-linecap="round">
+    <path fill="#d9702e" fill-rule="evenodd" d="M423 420C385 374 319 285 286 227C261 183 263 137 287 101C323 47 391 26 483 26H543C636 26 703 48 738 101C763 139 765 183 740 228C706 287 642 375 599 422L527 386C573 326 623 255 652 206C671 175 669 156 651 141C627 121 590 115 539 115H484C433 115 394 121 371 141C352 157 351 176 370 207C400 257 450 327 495 386Z" />
+    <rect x="193" y="510" width="636" height="502" rx="91" fill="#d9702e" />
+    <rect x="254" y="590" width="512" height="372" rx="51" fill="#e8dcc2" stroke-width="23" />
+    <path fill="#e8dcc2" d="M471 377H546C573 377 589 393 589 419V469C589 493 576 507 557 507V554C557 580 537 602 511 602C486 602 465 581 465 555V507C441 507 427 494 427 470V419C427 392 443 377 471 377Z" />
+  </g>
+  <path d="M396 675L624 886M625 675L396 885" fill="none" stroke="#c0392b" stroke-width="88" stroke-linecap="round" stroke-linejoin="round" />
+</svg>

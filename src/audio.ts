@@ -20,6 +20,7 @@ let gear = 1;
 let shiftT = 0;
 let noiseBuf: AudioBuffer;
 let lastThump = 0;
+let paused = false;
 
 // Browsers only allow audio after a user gesture, so the graph is built on the first key or click.
 function init() {
@@ -81,6 +82,12 @@ function init() {
 
 addEventListener('keydown', init);
 addEventListener('pointerdown', init);
+
+// A touch pointerdown carries no user activation, so a context built there starts suspended; the start gate's tap resumes it.
+export function unlockAudio() {
+  init();
+  ac!.resume();
+}
 document.addEventListener('visibilitychange', () => {
   if (!ac) return;
   if (document.hidden) ac.suspend();
@@ -118,11 +125,17 @@ function thump(strength: number) {
   noise.stop(t + 0.18);
 }
 
+// Mutes everything via the master gain; the engine graph keeps running so resuming is seamless.
+export function setAudioPaused(p: boolean) {
+  paused = p;
+  if (ac) master.gain.setTargetAtTime(p ? 0 : audioParams.volume, ac.currentTime, 0.05);
+}
+
 export function updateAudio(dt: number, stats: CarStats, throttle: number, maxSpeed: number, impact: number) {
   if (!ac) return;
   const t = ac.currentTime;
-  if (impact > 0) thump(Math.min(impact / IMPACT_FULL, 1));
-  master.gain.setTargetAtTime(audioParams.volume, t, 0.05);
+  if (impact > 0 && !paused) thump(Math.min(impact / IMPACT_FULL, 1));
+  master.gain.setTargetAtTime(paused ? 0 : audioParams.volume, t, 0.05);
 
   // Revs come from the car's gearbox so what you hear matches how it pulls.
   if (stats.gear > gear) shiftT = SHIFT_DIP;

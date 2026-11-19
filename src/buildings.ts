@@ -470,7 +470,9 @@ function flatRoofProps(mb: MeshBuilder, rand: Rand, r: Rect, top: number) {
 }
 
 // Adds the building's visuals; returns the boxes to collide with and where a service wire can attach.
-export function addBuilding(mb: MeshBuilder, rand: Rand, spec: BuildingSpec): { solids: Aabb[]; anchor: THREE.Vector3 | null } {
+// Massing and roofs go into `mb`, each side's facade detail into `facades[side]` (so it can be hidden while the
+// camera is behind that facade).
+export function addBuilding(mb: MeshBuilder, facades: Record<Side, MeshBuilder>, rand: Rand, spec: BuildingSpec): { solids: Aabb[]; anchor: THREE.Vector3 | null } {
   const style = makeStyle(rand, rand() < 0.25 ? 'old' : 'apartment');
   const floors = style.kind === 'old' ? 2 + (rand() < 0.5 ? 1 : 0) : spec.floors;
   const { base } = spec;
@@ -492,7 +494,8 @@ export function addBuilding(mb: MeshBuilder, rand: Rand, spec: BuildingSpec): { 
   }
 
   for (const side of sides) {
-    groundFloor(mb, rand, spec, base, side, style, side === spec.front);
+    const fm = facades[side];
+    groundFloor(fm, rand, spec, base, side, style, side === spec.front);
     let skip: ((bay: number) => boolean) | undefined;
     if (style.kind === 'old' && side === spec.front && floors > 1) {
       // The cumba covers the middle bays of the upper floors.
@@ -501,11 +504,11 @@ export function addBuilding(mb: MeshBuilder, rand: Rand, spec: BuildingSpec): { 
       const bw = width / bays;
       const span = bays >= 4 ? 2 : 1;
       const first = Math.floor((bays - span) / 2);
-      solids.push(cumba(mb, rand, frame, first * bw + 0.1, (first + span) * bw - 0.1, style, top - base));
+      solids.push(cumba(fm, rand, frame, first * bw + 0.1, (first + span) * bw - 0.1, style, top - base));
       skip = (bay) => bay >= first && bay < first + span;
     }
     const front = side === spec.front;
-    const a = upperFloors(mb, rand, upper, base, side, style, floors, front, skip);
+    const a = upperFloors(fm, rand, upper, base, side, style, floors, front, skip);
     if (front) anchor = a;
   }
 

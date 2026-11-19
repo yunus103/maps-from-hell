@@ -1,0 +1,8 @@
+<svg viewBox="0 0 1024 1024" xmlns="http://www.w3.org/2000/svg" width="1024" height="1024">
+  <title>Cracked egg fragile symbol</title>
+  <g id="egg" stroke="#504d4b" stroke-linejoin="round" stroke-linecap="round">
+    <path d="M512 54C342 54 129 362 129 591C129 811 282 950 501 950C720 950 870 813 870 591C870 362 675 54 512 54Z" fill="#d9702e" stroke-width="44" />
+    <path d="M442 158C371 193 308 273 272 370" fill="none" stroke="#e8dcc2" stroke-width="62" />
+    <path d="M600 83L501 269L600 343L402 476L452 536L312 702L479 537L445 478L616 360Q637 344 617 326L539 262L623 103Z" fill="#504d4b" stroke="none" />
+  </g>
+</svg>

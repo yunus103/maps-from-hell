@@ -1,0 +1,12 @@
+<svg viewBox="0 0 1024 1024" xmlns="http://www.w3.org/2000/svg" width="1024" height="1024">
+  <title>Pause button</title>
+  <g id="pause-button" stroke="#504d4b" stroke-linejoin="round">
+    <rect x="61" y="65" width="902" height="894" rx="227" fill="#d9702e" stroke-width="42" />
+    <path d="M105 607C157 769 315 872 510 872S862 769 919 607V731C919 834 837 918 734 918H290C188 918 105 834 105 731Z" fill="#c85f20" stroke="none" />
+    <path d="M104 281C117 179 207 111 343 111C372 111 408 112 431 117C459 123 461 146 437 154C427 158 410 157 393 159C281 168 218 200 170 263C152 286 138 313 122 311C106 310 101 297 104 281Z" fill="#e8dcc2" stroke="none" />
+    <g id="pause-bars" fill="#e8dcc2" stroke-width="38">
+      <rect x="277" y="277" width="185" height="471" rx="62" />
+      <rect x="559" y="277" width="183" height="471" rx="62" />
+    </g>
+  </g>
+</svg>

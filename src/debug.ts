@@ -12,11 +12,17 @@ export function createDebugOverlay(renderer: WebGLRenderer) {
   let frames = 0;
   let elapsed = 0;
 
+  let visible = true;
+  function setVisible(v: boolean) {
+    visible = v;
+    el.style.display = v ? '' : 'none';
+  }
+
   // Call once per frame, after rendering, so renderer.info holds this frame's stats.
-  return function update(dt: number, extra: string) {
+  function update(dt: number, extra: string) {
     frames++;
     elapsed += dt;
-    if (elapsed < UPDATE_INTERVAL) return;
+    if (elapsed < UPDATE_INTERVAL || !visible) return;
     const { calls, triangles } = renderer.info.render;
     el.textContent =
       `FPS   ${Math.round(frames / elapsed)}\n` +
@@ -25,5 +31,7 @@ export function createDebugOverlay(renderer: WebGLRenderer) {
       extra;
     frames = 0;
     elapsed = 0;
-  };
+  }
+
+  return { update, setVisible };
 }

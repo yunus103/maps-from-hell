@@ -21,6 +21,12 @@ let keySteer = 0;
 let keyThrottle = 0;
 let padResetHeld = false;
 
+// Written by the on-screen buttons (ui/touch.ts); readInput treats each like holding its key.
+export const touchInput = { left: false, right: false, gas: false, brake: false, handbrake: false };
+export function queueReset() {
+  resetQueued = true;
+}
+
 addEventListener('keydown', (e) => {
   if (BLOCKED_KEYS.has(e.code)) e.preventDefault();
   keys.add(e.code);
@@ -37,19 +43,20 @@ function moveTowards(from: number, to: number, maxDelta: number): number {
 
 export function readInput(dt: number): DriveInput {
   const p = inputParams;
-  const target = (down('KeyA', 'ArrowLeft') ? 1 : 0) - (down('KeyD', 'ArrowRight') ? 1 : 0);
+  const t = touchInput;
+  const target = (down('KeyA', 'ArrowLeft') || t.left ? 1 : 0) - (down('KeyD', 'ArrowRight') || t.right ? 1 : 0);
   // Releasing or reversing the key recentres faster than turning in.
   const returning = target === 0 || Math.sign(target) !== Math.sign(keySteer);
   keySteer = moveTowards(keySteer, target, (returning ? p.keySteerReturn : p.keySteerSpeed) * dt);
 
   // Release drops instantly; only the rise is ramped.
-  keyThrottle = down('KeyW', 'ArrowUp') ? Math.min(keyThrottle + dt / Math.max(p.keyThrottleRise, 1e-3), 1) : 0;
+  keyThrottle = down('KeyW', 'ArrowUp') || t.gas ? Math.min(keyThrottle + dt / Math.max(p.keyThrottleRise, 1e-3), 1) : 0;
 
   const input: DriveInput = {
     steer: keySteer,
     throttle: keyThrottle,
-    brake: down('KeyS', 'ArrowDown') ? 1 : 0,
-    handbrake: down('Space'),
+    brake: down('KeyS', 'ArrowDown') || t.brake ? 1 : 0,
+    handbrake: down('Space') || t.handbrake,
     reset: resetQueued,
   };
   resetQueued = false;

@@ -1,0 +1,10 @@
+<svg viewBox="0 0 1024 1024" xmlns="http://www.w3.org/2000/svg" width="1024" height="1024">
+  <title>Language globe</title>
+  <g stroke="#504d4b" stroke-width="38" stroke-linecap="round" stroke-linejoin="round">
+    <g id="globe">
+      <circle cx="454" cy="562" r="411" fill="#d9702e" />
+      <path d="M454 151C309 226 222 392 222 562S309 898 454 973M454 151C599 226 687 392 687 562S599 898 454 973M454 151V973M43 562H865M132 317C281 430 626 430 776 317M132 807C281 694 626 694 776 807" fill="none" />
+    </g>
+    <path id="speech-bubble" d="M986 228C986 121 882 34 752 34S518 121 518 228C518 281 544 326 587 360L562 438C555 459 572 474 591 462L683 413C705 419 728 422 752 422C882 422 986 335 986 228Z" fill="#e8dcc2" />
+  </g>
+</svg>

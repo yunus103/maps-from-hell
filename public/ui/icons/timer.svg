@@ -1,0 +1,10 @@
+<svg viewBox="0 0 1024 1024" xmlns="http://www.w3.org/2000/svg" width="1024" height="1024">
+  <g id="stopwatch" stroke="#504d4b" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M475 142H549V233H475Z" fill="#d9702e" stroke-width="34" />
+    <rect x="349" y="38" width="323" height="126" rx="63" fill="#d9702e" stroke-width="36" />
+    <ellipse cx="510" cy="605" rx="382" ry="389" fill="#e8dcc2" stroke-width="36" />
+    <ellipse cx="510" cy="606" rx="301" ry="310" fill="#d9702e" stroke-width="32" />
+    <path d="M510 608L672 446" fill="none" stroke-width="54" />
+    <circle cx="510" cy="608" r="57" fill="#e8dcc2" stroke-width="30" />
+  </g>
+</svg>

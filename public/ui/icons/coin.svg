@@ -1,0 +1,11 @@
+<svg viewBox="0 0 1024 1024" xmlns="http://www.w3.org/2000/svg" width="1024" height="1024">
+  <g id="wings" fill="#e8dcc2" stroke="#504d4b" stroke-width="28" stroke-linejoin="round" stroke-linecap="round">
+    <path id="left-wing" d="M280 413C254 395 219 396 170 368C132 347 105 322 82 298C69 285 54 293 42 309C14 346 17 392 37 428C56 460 86 483 119 495C103 494 89 490 77 488C48 482 31 510 39 541C51 593 99 617 148 614C135 619 117 622 113 637C104 665 136 695 168 704C209 717 251 707 285 686L318 536Z" />
+    <path id="right-wing" d="M744 413C770 395 805 396 854 368C892 347 919 322 942 298C955 285 970 293 982 309C1010 346 1007 392 987 428C968 460 938 483 905 495C921 494 935 490 947 488C976 482 993 510 985 541C973 593 925 617 876 614C889 619 907 622 911 637C920 665 888 695 856 704C815 717 773 707 739 686L706 536Z" />
+  </g>
+  <g id="coin" stroke="#504d4b" stroke-linejoin="round">
+    <ellipse id="coin-rim" cx="507" cy="532" rx="264" ry="272" fill="#d9702e" stroke-width="28" />
+    <ellipse id="coin-face" cx="506" cy="532" rx="200" ry="205" fill="#d9702e" stroke-width="18" />
+    <path id="coin-highlight" d="M362 491C376 449 417 403 491 385" fill="none" stroke="#e8dcc2" stroke-width="46" stroke-linecap="round" />
+  </g>
+</svg>

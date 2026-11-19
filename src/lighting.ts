@@ -1,15 +1,23 @@
 import * as THREE from 'three';
 import { worldMaterial } from './palette';
+import { QUALITY } from './quality';
 
 const DEG = Math.PI / 180;
-const SHADOW_EXTENT = 45;
-const SHADOW_MAP_SIZE = 2048;
+const SHADOW_EXTENT = 35;
+// The shadow box sits ahead of the car, where the chase camera looks: same reach forward as a centred 45 m
+// box, but ~40% less area (and fewer world tiles drawn into the shadow map).
+const SHADOW_AHEAD = 15;
+const SHADOW_MAP_SIZE = QUALITY.shadowMapSize;
 const SUN_DISTANCE = 60; // shadow camera distance from its focus
 const SKY_RADIUS = 900; // inside the camera's far plane
 
 const LAMP_COLOR = 0xffd59a;
 const LAMP_RANGE = 30;
 const LAMP_CONE = 1.15; // radians: lights the road and sidewalks, not the upper floors
+// Forward shading pays per light in every shader, so only the lamps nearest the car get a real light; the
+// pool size never changes (no shader recompiles). Every lens still glows through the world material.
+const LAMP_POOL = QUALITY.lampLights;
+const LAMP_REFRESH_MS = 500;
 const HEADLIGHT = { color: 0xfff2d8, range: 45, angle: 0.45, penumbra: 0.6, y: 0.75, z: 2.3, aim: 14 };
 // Soft light hovering above and behind the car so it never turns into a black hole at night (a game cheat, not a real light).
 const CAR_FILL = { color: 0xdfe6ff, range: 9, y: 3.2, z: -3 };
@@ -77,6 +85,17 @@ export const PRESETS: Record<string, typeof DAY> = {
 
 export const lightParams = { ...DAY };
 
+// Shift clock (0 = 09:00, 1 = 19:00) to lighting: day through the afternoon, evening in the last ~45 %.
+const TIME_KEYS: { t: number; p: typeof DAY }[] = [
+  { t: 0, p: DAY },
+  { t: 0.55, p: DAY },
+  { t: 0.8, p: PRESETS.sunset },
+  { t: 1, p: PRESETS.night },
+];
+const COLOR_KEYS = ['sunColor', 'skyTop', 'skyHorizon', 'hemiSky', 'hemiGround'] as const;
+const colorA = new THREE.Color();
+const colorB = new THREE.Color();
+
 const skyMaterial = new THREE.ShaderMaterial({
   side: THREE.BackSide,
   depthWrite: false,
@@ -133,13 +152,24 @@ export function createLighting(scene: THREE.Scene, lamps: THREE.Vector3[], car: 
 
   // Lights exist in every preset (intensity 0 by day) so switching never changes the light count,
   // which would recompile every shader.
-  const lampLights = lamps.map((p) => {
+  const lampLights = lamps.slice(0, LAMP_POOL).map(() => {
     const l = new THREE.SpotLight(LAMP_COLOR, 0, LAMP_RANGE, LAMP_CONE, 0.8, 1.6);
-    l.position.copy(p).setY(p.y - 0.1);
-    l.target.position.copy(p).setY(0);
     scene.add(l, l.target);
     return l;
   });
+  const byDistance = lamps.map((_, i) => i);
+  const lampD = new Float32Array(lamps.length);
+  let lampRefresh = -Infinity;
+  function assignLamps(target: THREE.Vector3) {
+    lamps.forEach((p, i) => (lampD[i] = (p.x - target.x) ** 2 + (p.z - target.z) ** 2));
+    byDistance.sort((a, b) => lampD[a] - lampD[b]);
+    lampLights.forEach((l, k) => {
+      const p = lamps[byDistance[k]];
+      l.position.copy(p).setY(p.y - 0.1);
+      l.target.position.copy(p).setY(0);
+    });
+  }
+  assignLamps(new THREE.Vector3());
   const h = HEADLIGHT;
   const headlight = new THREE.SpotLight(h.color, 0, h.range, h.angle, h.penumbra, 1.2);
   headlight.position.set(0, h.y, h.z);
@@ -154,6 +184,7 @@ export function createLighting(scene: THREE.Scene, lamps: THREE.Vector3[], car: 
   const sunRotationInv = new THREE.Matrix4();
   const shadowTexel = (SHADOW_EXTENT * 2) / SHADOW_MAP_SIZE;
   const focus = new THREE.Vector3();
+  const ahead = new THREE.Vector3();
 
   function apply() {
     const p = lightParams;
@@ -191,9 +222,28 @@ export function createLighting(scene: THREE.Scene, lamps: THREE.Vector3[], car: 
     apply();
   }
 
+  // Blends between the time-of-day keyframes; cheap enough to call every frame.
+  function setTimeOfDay(t01: number) {
+    const t = Math.min(Math.max(t01, 0), 1);
+    let k = 0;
+    while (k < TIME_KEYS.length - 2 && t > TIME_KEYS[k + 1].t) k++;
+    const [a, b] = [TIME_KEYS[k], TIME_KEYS[k + 1]];
+    const f = (t - a.t) / (b.t - a.t);
+    const out = lightParams as Record<string, number>;
+    for (const key of Object.keys(a.p) as (keyof typeof DAY)[]) out[key] = a.p[key] + (b.p[key] - a.p[key]) * f;
+    for (const key of COLOR_KEYS) out[key] = colorA.lerpColors(colorA.set(a.p[key]), colorB.set(b.p[key]), f).getHex();
+    apply();
+  }
+
   // The shadow box follows the target in whole shadow-map texels; sub-texel moves make shadow edges crawl.
   function follow(target: THREE.Vector3, camera: THREE.Camera) {
-    focus.copy(target).applyMatrix4(sunRotationInv);
+    const now = performance.now();
+    if (now - lampRefresh > LAMP_REFRESH_MS) {
+      lampRefresh = now;
+      assignLamps(target);
+    }
+    camera.getWorldDirection(ahead).setY(0).normalize();
+    focus.copy(target).addScaledVector(ahead, SHADOW_AHEAD).applyMatrix4(sunRotationInv);
     focus.x = Math.round(focus.x / shadowTexel) * shadowTexel;
     focus.y = Math.round(focus.y / shadowTexel) * shadowTexel;
     focus.applyMatrix4(sunRotation);
@@ -203,5 +253,5 @@ export function createLighting(scene: THREE.Scene, lamps: THREE.Vector3[], car: 
   }
 
   apply();
-  return { apply, follow, setPreset };
+  return { apply, follow, setPreset, setTimeOfDay };
 }

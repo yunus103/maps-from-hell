@@ -1,0 +1,14 @@
+<svg viewBox="0 0 1024 1024" xmlns="http://www.w3.org/2000/svg" width="1024" height="1024">
+<title>Checkered destination pin</title>
+<g id="flag" stroke="#504d4b" stroke-width="30" stroke-linejoin="round" stroke-linecap="round">
+<path d="M510 93 C626 34 665 160 797 94 Q809 88 809 105 L809 258 C690 351 626 238 510 282 Z" fill="#504d4b" />
+<g fill="#e8dcc2" stroke="none">
+<path d="M529 102 Q571 88 614 100 L614 180 Q570 170 529 184 Z" />
+<path d="M614 180 C644 188 673 204 703 204 L703 287 C670 286 642 269 614 258 Z" />
+<path d="M703 128 Q750 129 794 108 L794 183 Q750 205 703 204 Z" />
+</g>
+<path d="M479 403 L479 72" fill="none" stroke-width="72" />
+<path d="M479 403 L479 72" fill="none" stroke="#e8dcc2" stroke-width="42" />
+</g>
+<path id="pin" d="M477 379 C350 379 249 482 249 608 C249 669 273 714 309 764 L452 968 Q477 996 501 968 L646 764 C682 715 705 665 705 608 C705 482 604 379 477 379 Z M581 608 C581 667 535 714 477 714 C419 714 375 667 375 608 C375 549 420 501 477 501 C535 501 581 549 581 608 Z" fill="#d9702e" fill-rule="evenodd" stroke="#504d4b" stroke-width="30" stroke-linejoin="round" stroke-linecap="round" />
+</svg>

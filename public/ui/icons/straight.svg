@@ -1,0 +1,7 @@
+<svg viewBox="0 0 1024 1024" xmlns="http://www.w3.org/2000/svg" width="1024" height="1024">
+  <title>Thick upward arrow</title>
+  <g id="arrow" stroke-linecap="round" stroke-linejoin="round">
+    <path id="arrow-body" d="M 453,104 Q 511,44 569,104 L 882,460 Q 907,490 891,515 Q 879,535 846,531 L 700,516 Q 684,514 684,531 L 684,891 Q 684,975 601,975 L 419,975 Q 333,975 333,891 L 333,517 Q 322,515 307,517 L 172,531 Q 137,535 123,513 Q 107,488 132,457 Z" fill="#d9702e" stroke="#504d4b" stroke-width="48" />
+    <path id="cream-highlight" d="M 245,410 C 289,320 397,208 502,128" fill="none" stroke="#e8dcc2" stroke-width="72" />
+  </g>
+</svg>

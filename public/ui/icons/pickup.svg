@@ -1,0 +1,15 @@
+<svg viewBox="0 0 1024 1024" xmlns="http://www.w3.org/2000/svg" width="1024" height="1024">
+  <title>Gloved hand picking up a cardboard box</title>
+  <g stroke="#504d4b" stroke-linecap="round" stroke-linejoin="round">
+    <g id="box" stroke-width="28">
+      <path d="M167 727 302 608H550L646 697V865Q646 882 632 895L531 980H207Q167 980 167 940Z" fill="#d9702e" />
+      <path d="M167 727 302 608H550L646 697 531 727Z" fill="#e8dcc2" />
+      <path d="M531 727V980M167 727H309M408 727H531L646 697" fill="none" />
+      <path d="M405 608H507L408 719V815Q408 834 389 834H330Q309 834 309 814V719Z" fill="#e8dcc2" stroke-width="20" />
+    </g>
+    <g id="glove" stroke-width="34">
+      <path d="M590 174C538 229 436 260 340 303 238 348 163 425 121 520 96 576 92 641 124 669 147 690 181 688 205 666 227 647 236 614 255 585 285 539 324 512 376 496 441 476 509 486 550 511 597 540 585 585 573 627 559 674 567 705 597 720 633 739 665 721 691 688 724 644 744 574 751 508 756 451 771 399 797 350Z" fill="#d9702e" />
+      <path d="M595 183Q573 161 590 129L638 68Q675 22 720 58L896 210Q939 247 909 289L867 341Q834 382 796 349Z" fill="#e8dcc2" />
+    </g>
+  </g>
+</svg>
