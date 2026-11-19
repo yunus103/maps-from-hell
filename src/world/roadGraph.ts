@@ -1,5 +1,5 @@
 import type { EdgeId, NodeId, Place, RoadEdge, RoadGraph, RoadNode, RoadPos, Turn } from '../game/types';
-import { FTUE, PLACES, SIDEWALK, SPAWN, XS, ZS, fakeBlocker, isOpen, nodeId, streetWidth, type Seg } from './district';
+import { FTUE, PLACES, RAMP_SEG, SIDEWALK, SPAWN, XS, ZS, fakeBlocker, isOpen, nodeId, streetWidth, type Seg } from './district';
 
 export function createRoadGraph(): RoadGraph {
   const nodes: RoadNode[] = [];
@@ -123,4 +123,31 @@ export function createRoadGraph(): RoadGraph {
       return iz * ox - ix * oz > 0 ? 'left' : 'right';
     },
   };
+}
+
+// ---------- Helpers for ambient agents (city.ts and friends) ----------
+
+// The edge laid on segment `seg` (it must be paved).
+export function findEdge(graph: RoadGraph, seg: Seg): RoadEdge {
+  const [ax, az] = [XS[seg.i], ZS[seg.j]];
+  const [bx, bz] = seg.dir === 'h' ? [XS[seg.i + 1], az] : [ax, ZS[seg.j + 1]];
+  return graph.edges.find((e) => {
+    const [a, b] = [graph.nodes[e.a], graph.nodes[e.b]];
+    return a.x === ax && a.z === az && b.x === bx && b.z === bz;
+  })!;
+}
+
+export const isRampEdge = (graph: RoadGraph, e: RoadEdge) => findEdge(graph, RAMP_SEG).id === e.id;
+
+// Streets agents may use: no fake streets (they end in a blocker) and not the ramp.
+export function agentEdges(graph: RoadGraph): boolean[] {
+  const ramp = findEdge(graph, RAMP_SEG).id;
+  return graph.edges.map((e) => !e.fake && e.id !== ramp);
+}
+
+export const isHorizontal = (graph: RoadGraph, e: RoadEdge) => graph.nodes[e.a].z === graph.nodes[e.b].z;
+
+// Half size of node `n`'s junction box along the edge's axis.
+export function nodeHalfAlong(graph: RoadGraph, e: RoadEdge, n: NodeId): number {
+  return isHorizontal(graph, e) ? graph.nodes[n].halfX : graph.nodes[n].halfZ;
 }

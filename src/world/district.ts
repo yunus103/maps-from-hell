@@ -41,11 +41,14 @@ export function isOpen(dir: Seg['dir'], i: number, j: number): boolean {
 
 export const fakeBlocker = (s: Seg): BlockerKind | null => FAKE.find((f) => same(f.seg, s))?.blocker ?? null;
 
+// The tabletop ramp (block.ts) sits on this segment; places and ambient agents keep off it.
+export const RAMP_SEG: Seg = v(3, 2);
+
 export type PlaceDef = {
   seg: Seg;
   t: number; // 0 at the west/south end
   side: 1 | -1; // +1 = left when driving west→east / south→north
-  kind: 'shop' | 'home';
+  kind: 'shop' | 'home' | 'mechanic';
   shop: ShopTag | null;
   name: L10n;
 };
@@ -56,9 +59,14 @@ const shop = (seg: Seg, t: number, side: 1 | -1, tag: ShopTag, en: string, tr: s
 const home = (seg: Seg, t: number, side: 1 | -1, en: string, tr = en): PlaceDef => ({
   seg, t, side, kind: 'home', shop: null, name: { en, tr },
 });
+const mechanic = (seg: Seg, t: number, side: 1 | -1, en: string, tr: string): PlaceDef => ({
+  seg, t, side, kind: 'mechanic', shop: null, name: { en, tr },
+});
 
-// Index = Place id. Sides face a block (perimeter streets: the inner curb); 0 and 10 are in the right lane of
-// the FTUE route.
+// Index = Place id (append only: the FTUE and saved progress rely on ids). Sides face a block (perimeter
+// streets: the inner curb); 0 and 10 are in the right lane of the FTUE route. No place on a fake street or the
+// ramp segment, >= 20 m from another place on the same edge side, and no t in 0.40..0.46 (its sign post would
+// land on the mid-segment utility pole).
 export const PLACES: PlaceDef[] = [
   shop(v(2, 1), 0.3, -1, 'kebab', 'Usta Kebap', 'Usta Kebap'),
   shop(h(2, 3), 0.5, 1, 'lahmacun', 'Lahmacun Palace', 'Lahmacun Sarayı'),
@@ -76,6 +84,22 @@ export const PLACES: PlaceDef[] = [
   home(h(1, 4), 0.5, 1, 'The Muhtar', 'Muhtar'),
   home(h(3, 4), 0.5, 1, 'Cat Lady', 'Kedici Teyze'),
   home(v(0, 3), 0.5, 1, 'Night Shift Nurse', 'Nöbetçi Hemşire'),
+  // Phase 2: one more shop of every new kind, plus a second grocer and bakery, spread over the four quadrants.
+  shop(h(1, 3), 0.5, -1, 'florist', 'Nergis Florist', 'Çiçekçi Nergis'),
+  shop(h(2, 1), 0.5, 1, 'electronics', 'Ferhat Electronics', 'Elektronik Ferhat'),
+  shop(v(4, 2), 0.5, -1, 'petshop', 'Pati Pet Shop', 'Pati Petshop'),
+  shop(v(1, 1), 0.5, 1, 'stationery', 'Pencil Stationery', 'Kalem Kırtasiye'),
+  shop(h(2, 4), 0.5, 1, 'grocer', 'Greengrocer Hasan', 'Manav Hasan'),
+  shop(h(0, 0), 0.5, -1, 'bakery', 'Golden Simit Bakery', 'Altın Simit Fırını'),
+  // Sanayi repair stops on opposite corners of the map (south-east and north-west).
+  mechanic(v(4, 0), 0.5, -1, "Cemal's Garage", 'Oto Tamir Cemal'),
+  mechanic(h(0, 4), 0.5, 1, 'Master Rıza Repairs', 'Sanayi Usta Rıza'),
+  home(v(0, 0), 0.5, 1, 'Retired Colonel', 'Emekli Albay'),
+  home(h(1, 1), 0.6, 1, 'The Influencer', 'Fenomen Duygu'),
+  home(h(3, 0), 0.5, -1, 'Doorman Hüseyin', 'Kapıcı Hüseyin'),
+  home(v(2, 2), 0.6, 1, 'Crypto Bro', 'Kriptocu Abi'),
+  home(h(1, 3), 0.7, 1, 'Complaining Neighbour', 'Şikayetçi Komşu'),
+  home(h(2, 1), 0.25, -1, 'Wedding House', 'Düğün Evi'),
 ];
 
 // Right lane of the x = 0 avenue, heading north, past the FTUE junction so a shift never opens on its lie.

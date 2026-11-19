@@ -9,14 +9,19 @@ import { CURB_H } from './district';
 
 type Solid = (x0: number, x1: number, y0: number, y1: number, z0: number, z1: number) => void;
 
-const STYLE: Record<ShopTag | 'home', { bg: string; icon: string }> = {
+const STYLE: Record<ShopTag | 'home' | 'mechanic', { bg: string; icon: string }> = {
   kebab: { bg: '#b83224', icon: '🥙' },
   lahmacun: { bg: '#d9731a', icon: '🫓' },
   bakery: { bg: '#c2577f', icon: '🎂' },
   grocer: { bg: '#2f7d3b', icon: '🥚' },
   icecream: { bg: '#2a86b8', icon: '🍦' },
   pharmacy: { bg: '#c8102e', icon: '💊' },
+  florist: { bg: '#c2407a', icon: '💐' },
+  electronics: { bg: '#3b4a9e', icon: '🔌' },
+  petshop: { bg: '#8a5a2b', icon: '🐾' },
+  stationery: { bg: '#6b4fa0', icon: '✏️' },
   home: { bg: '#2e4057', icon: '🏠' },
+  mechanic: { bg: '#4a4f57', icon: '🔧' },
 };
 const CELL_W = 256;
 const CELL_H = 128;
@@ -31,7 +36,7 @@ function drawAtlas(ctx: CanvasRenderingContext2D, places: Place[]) {
   const lang = getLang();
   ctx.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height);
   places.forEach((p, k) => {
-    const s = STYLE[p.shop ?? 'home'];
+    const s = STYLE[p.kind === 'mechanic' ? 'mechanic' : p.shop ?? 'home'];
     const x = (k % COLS) * CELL_W;
     const y = Math.floor(k / COLS) * CELL_H;
     ctx.fillStyle = s.bg;
