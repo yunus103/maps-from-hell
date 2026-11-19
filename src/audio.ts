@@ -125,6 +125,11 @@ function thump(strength: number) {
   noise.stop(t + 0.18);
 }
 
+// For one-shot cues (sfx.ts): they go through the master gain so pause/mute applies to them too.
+export function audioOut(): { ac: AudioContext; out: AudioNode } | null {
+  return ac ? { ac, out: master } : null;
+}
+
 // Mutes everything via the master gain; the engine graph keeps running so resuming is seamless.
 export function setAudioPaused(p: boolean) {
   paused = p;
