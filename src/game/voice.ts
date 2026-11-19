@@ -1,6 +1,6 @@
-import type { Lang, LineId, SayOptions, SayPriority, ShiftModifiers, Subtitle, Voice } from './types';
+import type { L10n, Lang, LineId, Mood, SayOptions, SayPriority, SayTextOptions, ShiftModifiers, Subtitle, Voice } from './types';
 import { BASE_MODIFIERS } from './types';
-import { getLang } from './lang';
+import { getLang, tx } from './lang';
 import { LINES } from './lines';
 
 const RATE = 1.05;
@@ -30,11 +30,14 @@ const CRITICAL = new Set<LineId>([
   're_crash_mine', 're_dead_end', 're_combo',
   'ftue_1', 'ftue_3', 'ftue_hint_tells', 'ftue_pickup', 'ftue_hired',
   'upd_reverse', 'upd_sponsored', 'upd_silent', 'upd_honesty', 'upd_rhyme', 'upd_beta', 'upd_ai', 'upd_speedrun', 'upd_offline',
+  'upd_drift', 'upd_passenger', 'upd_traffic',
 ]);
 
 interface Request {
-  id: LineId;
+  id: LineId | null; // null = free text (sayText)
+  free: { text: L10n; o: SayTextOptions } | null;
   opts: SayOptions;
+  critical: boolean; // CRITICAL line or sayText({ critical: true })
   lang: Lang;
   wait: number; // s spent queued
   seq: number; // order of say() calls
@@ -55,6 +58,7 @@ interface Playing {
 export function createVoice(): Voice {
   const synth = typeof speechSynthesis !== 'undefined' ? speechSynthesis : null;
   const picked: Record<Lang, SpeechSynthesisVoice | null> = { en: null, tr: null };
+  const ranked: Record<Lang, SpeechSynthesisVoice[]> = { en: [], tr: [] }; // picked first, then the other voices
   const warned = new Set<Lang>();
 
   let mods: ShiftModifiers = BASE_MODIFIERS;
@@ -76,6 +80,11 @@ export function createVoice(): Voice {
   function loadVoices() {
     picked.en = pick('en');
     picked.tr = pick('tr');
+    for (const l of ['en', 'tr'] as const) {
+      const p = picked[l];
+      const rest = (synth?.getVoices() ?? []).filter((v) => v !== p && v.lang.toLowerCase().startsWith(l));
+      ranked[l] = p ? [p, ...rest] : rest;
+    }
   }
 
   if (synth) {
@@ -96,10 +105,11 @@ export function createVoice(): Voice {
   window.addEventListener('keydown', unlock, true);
   window.addEventListener('pointerdown', unlock, true);
 
-  function voiceFor(lang: Lang): SpeechSynthesisVoice | null {
+  // rank > 0: another system voice of the language for a character, where the OS has several.
+  function voiceFor(lang: Lang, rank = 0): SpeechSynthesisVoice | null {
     if (!synth) return null;
     if (!picked[lang]) loadVoices();
-    const v = picked[lang];
+    const v = ranked[lang][rank] ?? picked[lang];
     if (!v && !warned.has(lang)) {
       warned.add(lang);
       console.info(`[voice] no "${lang}" speech voice available, subtitles only`);
@@ -118,7 +128,7 @@ export function createVoice(): Voice {
     return cur !== null && !cur.done;
   }
 
-  const critical = (p: Playing | null) => p !== null && !p.done && CRITICAL.has(p.req.id);
+  const critical = (p: Playing | null) => p !== null && !p.done && p.req.critical;
   const holdsNav = (p: Playing | null) => p !== null && !p.done && p.priority === 'react';
   const navLimit = (p: Playing) => (p.readTime < SHORT_LINE ? SHORT_MAX_WAIT : NAV_MAX_WAIT);
 
@@ -132,21 +142,21 @@ export function createVoice(): Voice {
     if (paused) return;
     // Critical lines said before the waiting nav line go first ("Order picked up" before the next turn).
     const head = queue[0];
-    if (navWaiting && !(head && CRITICAL.has(head.id) && head.seq < navWaiting.seq)) {
+    if (navWaiting && !(head && head.critical && head.seq < navWaiting.seq)) {
       const n = navWaiting;
       navWaiting = null;
       return play(n);
     }
     let q = queue.shift();
-    while (q && !CRITICAL.has(q.id) && q.wait > STALE_REACT) q = queue.shift();
+    while (q && !q.critical && q.wait > STALE_REACT) q = queue.shift();
     if (q) play(q);
   }
 
   function enqueue(req: Request) {
     if (queue.length >= QUEUE_MAX) {
-      const minor = queue.findIndex((q) => !CRITICAL.has(q.id));
+      const minor = queue.findIndex((q) => !q.critical);
       if (minor >= 0) queue.splice(minor, 1);
-      else if (!CRITICAL.has(req.id)) return;
+      else if (!req.critical) return;
       else queue.shift();
     }
     queue.push(req);
@@ -161,24 +171,47 @@ export function createVoice(): Voice {
 
   function play(req: Request) {
     const { lang } = req;
-    const line = LINES[req.id];
-    const text = fill(line.text[lang], req.opts.params);
+    const free = req.free?.o;
+    const speaker = free?.speaker;
+    const yoldas = !speaker || speaker.kind === 'yoldas';
+    let text: string;
+    let mood: Mood;
+    let emoji: string;
+    if (req.id) {
+      const line = LINES[req.id];
+      text = fill(line.text[lang], req.opts.params);
+      mood = line.mood;
+      emoji = line.emoji;
+    } else {
+      text = fill(req.free!.text[lang], free?.params);
+      mood = yoldas ? (free?.mood ?? 'neutral') : 'neutral';
+      emoji = free?.emoji ?? '…';
+    }
+    const muted = mods.silent && yoldas; // Silent Mode mutes only YOLDAŞ
     const priority = req.opts.priority ?? 'react';
     token++;
     synth?.cancel();
     if (navWaiting) navWaiting.wait = 0; // its wait limit applies to the line now playing
     // Minor lines from before a command ("Recalculating…") are out of date once it is spoken.
-    if (priority === 'nav') queue = queue.filter((q) => CRITICAL.has(q.id) || q.seq > req.seq);
+    if (priority === 'nav') queue = queue.filter((q) => q.critical || q.seq > req.seq);
 
-    const voice = !mods.silent && unlocked ? voiceFor(lang) : null;
+    const voice = !muted && unlocked ? voiceFor(lang, speaker?.voiceRank) : null;
     const readTime = Math.max(1, text.length / READ_CHARS_PER_S);
+    const rate = free ? (speaker?.rate ?? RATE) : req.opts.hesitant ? HES_RATE : RATE;
+    const pitch = free ? (speaker?.pitch ?? PITCH) : req.opts.hesitant ? HES_PITCH : PITCH;
+    // Free text may come from a slow speaker (the grandpa): its safety-net finish scales with the rate.
+    const spoken = free ? Math.max(SUB_MAX - SUB_TAIL, (readTime * RATE) / rate + 1) : SUB_MAX - SUB_TAIL;
     const p: Playing = {
-      sub: { text: mods.silent ? line.emoji : text, mood: line.mood },
+      sub: {
+        text: muted ? emoji : text,
+        mood,
+        speaker: yoldas ? undefined : { kind: speaker.kind, label: tx(speaker.label) },
+      },
       priority,
       age: 0,
       done: false,
       doneAge: 0,
-      estimate: voice ? SUB_MAX - SUB_TAIL : Math.min(SUB_MAX - SUB_TAIL, readTime),
+      estimate: voice ? spoken : Math.min(SUB_MAX - SUB_TAIL, readTime),
       readTime,
       req,
       token,
@@ -186,14 +219,14 @@ export function createVoice(): Voice {
     cur = p;
 
     if (!voice || !synth) {
-      if (!unlocked && !mods.silent && priority === 'nav') pendingNav = { ...req, token, at: performance.now() };
+      if (!unlocked && !muted && priority === 'nav') pendingNav = { ...req, token, at: performance.now() };
       return;
     }
     const u = new SpeechSynthesisUtterance(text);
     u.voice = voice;
     u.lang = voice.lang;
-    u.rate = req.opts.hesitant ? HES_RATE : RATE;
-    u.pitch = req.opts.hesitant ? HES_PITCH : PITCH;
+    u.rate = rate;
+    u.pitch = pitch;
     const end = () => {
       if (cur === p && !p.done) finish(p);
     };
@@ -202,14 +235,25 @@ export function createVoice(): Voice {
     synth.speak(u);
   }
 
+  const betaFlip = (lang: Lang): Lang => (mods.betaVoice && Math.random() < BETA_CHANCE ? (lang === 'en' ? 'tr' : 'en') : lang);
+
   function say(id: LineId, opts: SayOptions = {}) {
-    const priority = opts.priority ?? 'react';
-    let lang = getLang();
-    if (mods.betaVoice && Math.random() < BETA_CHANCE) lang = lang === 'en' ? 'tr' : 'en';
-    const req: Request = { id, opts, lang, wait: 0, seq: seq++ };
+    submit({ id, free: null, opts, critical: CRITICAL.has(id), lang: betaFlip(getLang()), wait: 0, seq: seq++ });
+  }
+
+  // Same queue and rules as say(). The Beta Voice language flip only applies to YOLDAŞ.
+  function sayText(text: L10n, o: SayTextOptions = {}) {
+    const s = o.speaker;
+    const lang = s && s.kind !== 'yoldas' ? (s.lang ?? getLang()) : betaFlip(s?.lang ?? getLang());
+    const opts: SayOptions = { priority: o.priority, params: o.params };
+    submit({ id: null, free: { text, o }, opts, critical: !!o.critical, lang, wait: 0, seq: seq++ });
+  }
+
+  function submit(req: Request) {
+    const priority = req.opts.priority ?? 'react';
     if (paused) {
       if (priority === 'nav') resumeNav = req;
-      else if (CRITICAL.has(id)) enqueue(req);
+      else if (req.critical) enqueue(req);
       return;
     }
     if (priority === 'nav') {
@@ -230,6 +274,7 @@ export function createVoice(): Voice {
 
   return {
     say,
+    sayText,
     current: () => cur?.sub ?? null,
     setModifiers(m) {
       mods = m;
@@ -243,7 +288,8 @@ export function createVoice(): Voice {
         if (resumeNav) {
           const r = resumeNav;
           resumeNav = null;
-          say(r.id, r.opts);
+          if (r.id) say(r.id, r.opts);
+          else if (r.free) sayText(r.free.text, r.free.o);
         } else if (!busy()) next();
       }
     },
