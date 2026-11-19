@@ -29,9 +29,20 @@ const FTUE_PICKUP_HINT_DIST = 25; // m
 const FTUE_TELL_HINT_DELAY = 3; // s after the scripted crash
 const RESULT_HOLD = 2.5; // s on the road with the delivery/cancel result before the next screen
 const FTUE_RESULT_HOLD = 4;
+const CONTINUE_HEALTH = 50; // continue restores the car to at least this
+const CONTINUE_RATING = 3.5; // ...or the rating to at least this
+const PED_RATING_PENALTY = 0.2;
+const PED_PENALTY_COOLDOWN = 2; // s
+const PED_LINE_CHANCE = 0.5;
+const DRIFT_CASH_PER_1000 = 2; // ₺ per 1000 banked drift points, × mods.driftCashMul
+const REPAIR_EVENT_EVERY = 1; // s: mechanic spending is reported at most once per second
 
 const FTUE_KEY = 'mfh.ftue.v1';
 const BEST_KEY = 'mfh.best';
+const BEST_DRIFT_KEY = 'mfh.bestDrift';
+
+const CONTINUE_LINE = { en: "Want to continue? It's free. For now.", tr: 'Devam etmek ister misin? Ücretsiz. Şimdilik.' };
+const PED_LINE = { en: 'That was a pedestrian. They have ratings too.', tr: 'O bir yayaydı. Onların da puanı var.' };
 
 // First run (or ?ftue): main.ts should call startFtue() instead of toTitle().
 export function needsFtue(): boolean {
@@ -43,9 +54,9 @@ export function needsFtue(): boolean {
   }
 }
 
-function readBest(): number {
+function readNum(key: string): number {
   try {
-    return Number(localStorage.getItem(BEST_KEY)) || 0;
+    return Number(localStorage.getItem(key)) || 0;
   } catch {
     return 0;
   }
@@ -81,6 +92,9 @@ export function createShift(graph: RoadGraph, voice: Voice, rand: () => number =
     activeUpdates: [],
     mods: { ...BASE_MODIFIERS },
     summary: null,
+    continueUsed: false,
+    unranked: false,
+    pendingEnd: null,
   };
   let events: ShiftEvent[] = [];
 
@@ -95,7 +109,16 @@ export function createShift(graph: RoadGraph, voice: Voice, rand: () => number =
   let trusted = 0;
   let liesDodged = 0;
   let liesFollowed = 0;
+  let driftScore = 0;
+  let bestChain = 0;
+  let driftCash = 0;
+  let repairs = 0;
+  let pedsHit = 0;
 
+  let resumeAfterContinue: (() => void) | null = null;
+  let penaltyCooldown = 0;
+  let repairPending = 0; // ₺ spent at the mechanic not yet reported as a money event
+  let repairClock = 0;
   let eveningSaid = false;
   let lateSaid = false;
   let comboSaid = false;
@@ -188,26 +211,65 @@ export function createShift(graph: RoadGraph, voice: Voice, rand: () => number =
   function endShift(reason: EndReason) {
     voice.say(reason === 'fired' ? 're_suspended' : reason === 'towed' ? 're_towed' : 'shift_end');
     const repairBill = Math.round((100 - state.health) * REPAIR_PER_POINT);
-    const total = Math.max(0, Math.round(fares + tips + adIncome + discoveryBonus - repairBill));
-    const best = Math.max(readBest(), total);
-    writeKey(BEST_KEY, String(best));
+    const total = Math.max(0, Math.round(fares + tips + adIncome + discoveryBonus + driftCash - repairs - repairBill));
+    const drift = Math.round(driftScore);
+    // A continued shift is unranked: show the stored records, never overwrite them.
+    const best = state.unranked ? readNum(BEST_KEY) : Math.max(readNum(BEST_KEY), total);
+    const bestDrift = state.unranked ? readNum(BEST_DRIFT_KEY) : Math.max(readNum(BEST_DRIFT_KEY), drift);
+    if (!state.unranked) {
+      writeKey(BEST_KEY, String(best));
+      writeKey(BEST_DRIFT_KEY, String(bestDrift));
+    }
     const summary: ShiftSummary = {
       reason, deliveries: state.deliveries, cancelled, fares, tips, adIncome, discoveries, discoveryBonus, repairBill,
       total, bestMultiplier, trusted, liesDodged, liesFollowed, best,
+      driftScore: drift, bestChain, driftCash, repairs: Math.round(repairs), pedsHit, unranked: state.unranked, bestDrift,
     };
     state.summary = summary;
+    state.pendingEnd = null;
+    resumeAfterContinue = null;
     clearOrder();
     emit({ type: 'shiftEnd', reason });
     setPhase('shiftEnd');
   }
 
-  // Ends the shift if a life ran out or the day is over; true if it ended.
-  function checkEnd(): boolean {
-    if (state.rating < FIRE_RATING) endShift('fired');
-    else if (state.health <= 0) endShift('towed');
+  // Back on the road where the shift stopped: the order (if any) and a pending result hold are untouched.
+  const backToDriving = () => setPhase('driving');
+
+  // A lost life offers the one continue per shift; `resume` is where play goes on if it is accepted.
+  function failOrContinue(reason: 'fired' | 'towed', resume: () => void) {
+    if (state.continueUsed) return endShift(reason);
+    state.pendingEnd = reason;
+    resumeAfterContinue = resume;
+    voice.sayText(CONTINUE_LINE, { mood: 'sarcastic', emoji: '🔁❓', critical: true });
+    setPhase('continue');
+  }
+
+  // Ends the shift (or offers a continue) if a life ran out or the day is over; true if play stopped.
+  function checkEnd(resume: () => void = backToDriving): boolean {
+    if (state.rating < FIRE_RATING) failOrContinue('fired', resume);
+    else if (state.health <= 0) failOrContinue('towed', resume);
     else if (state.clock01 >= 1) endShift('time');
     else return false;
     return true;
+  }
+
+  function acceptContinue() {
+    const resume = resumeAfterContinue;
+    if (state.phase !== 'continue' || !resume) return;
+    // Restore whichever life is out, so a double failure can't end the shift right after the continue.
+    if (state.health <= 0 || state.pendingEnd === 'towed') state.health = Math.max(state.health, CONTINUE_HEALTH);
+    if (state.rating < FIRE_RATING || state.pendingEnd === 'fired') state.rating = Math.max(state.rating, CONTINUE_RATING);
+    state.continueUsed = true;
+    state.unranked = true;
+    state.pendingEnd = null;
+    resumeAfterContinue = null;
+    resume();
+  }
+
+  function declineContinue() {
+    if (state.phase !== 'continue' || !state.pendingEnd) return;
+    endShift(state.pendingEnd);
   }
 
   function pickUp(order: ActiveOrder) {
@@ -240,7 +302,7 @@ export function createShift(graph: RoadGraph, voice: Voice, rand: () => number =
     );
     state.deliveries++;
     emit({ type: 'difficulty', level: state.deliveries });
-    if (!checkEnd()) hold(RESULT_HOLD, toUpdateOrBoard);
+    if (!checkEnd(toUpdateOrBoard)) hold(RESULT_HOLD, toUpdateOrBoard);
   }
 
   function finishFtue(order: ActiveOrder) {
@@ -257,7 +319,7 @@ export function createShift(graph: RoadGraph, voice: Voice, rand: () => number =
     state.multiplier = 1;
     clearOrder();
     emit({ type: 'cancelled' });
-    if (!checkEnd()) hold(RESULT_HOLD, toBoard);
+    if (!checkEnd(toBoard)) hold(RESULT_HOLD, toBoard);
   }
 
   function inZone(car: CarSample, p: Place): boolean {
@@ -270,6 +332,8 @@ export function createShift(graph: RoadGraph, voice: Voice, rand: () => number =
     order.elapsed += dt;
     order.tipNow = tipAt(order);
     if (order.phase === 'toDropoff' && updatePackage(order, car, dt)) emit({ type: 'packageRuined' });
+    // Passenger comfort ran out: they get out, which counts as a cancel.
+    if (!ftue && order.offer.package === 'passenger' && order.packageHealth <= 0) return cancelOrder();
 
     if (ftue && order.phase === 'toPickup' && !ftuePickupSaid) {
       if (Math.hypot(car.x - order.offer.pickup.x, car.z - order.offer.pickup.z) < FTUE_PICKUP_HINT_DIST) {
@@ -309,6 +373,12 @@ export function createShift(graph: RoadGraph, voice: Voice, rand: () => number =
     state.activeUpdates = [];
     state.mods = { ...BASE_MODIFIERS };
     state.summary = null;
+    state.continueUsed = false;
+    state.unranked = false;
+    state.pendingEnd = null;
+    resumeAfterContinue = null;
+    driftScore = bestChain = driftCash = repairs = pedsHit = 0;
+    penaltyCooldown = repairPending = repairClock = 0;
     cancelled = fares = tips = adIncome = discoveries = discoveryBonus = 0;
     bestMultiplier = 1;
     trusted = liesDodged = liesFollowed = 0;
@@ -409,6 +479,9 @@ export function createShift(graph: RoadGraph, voice: Voice, rand: () => number =
       return;
     }
 
+    penaltyCooldown -= dt;
+    repairClock -= dt;
+    if (repairPending > 0 && repairClock <= 0) flushRepair();
     state.clock01 = Math.min(1, state.clock01 + dt / SHIFT_SECONDS);
     state.clockText = clockText(state.clock01);
     if (!eveningSaid && state.clock01 >= EVENING_AT) {
@@ -462,11 +535,57 @@ export function createShift(graph: RoadGraph, voice: Voice, rand: () => number =
     state.health = Math.max(0, state.health - points);
   }
 
+  function adjustTip(delta: number) {
+    const order = state.order;
+    if (state.phase !== 'driving' || !order || delta === 0) return;
+    order.tipBonus += delta;
+    emit({ type: 'tipAdjust', delta });
+  }
+
+  function penalty(reason: 'pedestrian') {
+    if (state.phase !== 'driving' || penaltyCooldown > 0) return;
+    penaltyCooldown = PED_PENALTY_COOLDOWN;
+    state.rating = Math.max(0, state.rating - PED_RATING_PENALTY);
+    pedsHit++;
+    emit({ type: 'penalty', amount: PED_RATING_PENALTY, reason });
+    if (rand() < PED_LINE_CHANCE) voice.sayText(PED_LINE, { mood: 'passive_aggressive', emoji: '🚶💥⭐' });
+    checkEnd();
+  }
+
+  function addDrift(points: number, chain: number) {
+    if (state.phase !== 'driving' || points <= 0) return;
+    driftScore += points;
+    bestChain = Math.max(bestChain, chain);
+    const cash = Math.round((points / 1000) * DRIFT_CASH_PER_1000 * state.mods.driftCashMul);
+    if (cash <= 0) return;
+    driftCash += cash;
+    state.money += cash;
+    emit({ type: 'money', amount: cash, reason: 'drift' });
+  }
+
+  function flushRepair() {
+    emit({ type: 'money', amount: -Math.round(repairPending), reason: 'repair' });
+    repairPending = 0;
+    repairClock = REPAIR_EVENT_EVERY;
+  }
+
+  function repair(points: number, cost: number) {
+    if (state.phase !== 'driving' || points <= 0) return;
+    state.health = Math.min(100, state.health + points);
+    state.money -= cost;
+    repairs += cost;
+    repairPending += cost;
+    if (repairClock <= 0) flushRepair();
+  }
+
   function drain(): ShiftEvent[] {
     const out = events;
     events = [];
     return out;
   }
 
-  return { state, startFtue, startShift, startFree, toTitle, pickOffer, pickUpdate, setPaused, update, onNavEvent, applyDamage, drain };
+  return {
+    state, startFtue, startShift, startFree, toTitle, pickOffer, pickUpdate, setPaused, update, onNavEvent, applyDamage,
+    acceptContinue, declineContinue, adjustTip, penalty, addDrift, repair, drain,
+  };
 }

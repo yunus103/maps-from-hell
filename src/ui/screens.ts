@@ -1,4 +1,4 @@
-import type { L10n, OrderOffer, ScreenActions, Screens, ShiftState, ShiftSummary, UpdateDef } from '../game/types';
+import type { EndReason, L10n, OrderOffer, ScreenActions, Screens, ShiftState, ShiftSummary, UpdateDef } from '../game/types';
 import { getLang, tx } from '../game/lang';
 import { S } from './strings';
 import { el, money, pic } from './hud';
@@ -7,14 +7,17 @@ const ICON = 'ui/icons/';
 // A new screen ignores input this long, so a key mashed for the previous screen can't pick blind here.
 const INPUT_GRACE_MS = 600;
 
-// Read-only peek at the best payout for the title screen; the shift module owns this key.
-function bestPayout(): number {
+// Read-only peek at the records for the title screen; the shift module owns these keys.
+function readRecord(key: 'mfh.best' | 'mfh.bestDrift'): number {
   try {
-    return Number(localStorage.getItem('mfh.best')) || 0;
+    return Number(localStorage.getItem(key)) || 0;
   } catch {
     return 0;
   }
 }
+
+// Drift points with a thousands separator ("12,345" / "12.345").
+const pts = (n: number) => Math.round(n).toLocaleString(getLang() === 'tr' ? 'tr-TR' : 'en-US');
 
 function mmss(sec: number): string {
   const s = Math.max(0, Math.round(sec));
@@ -83,12 +86,20 @@ export function createScreens(root: HTMLElement, actions: ScreenActions): Screen
     button(btns, S.free_drive, 'F', actions.freeDrive, 'btn-secondary');
     const row = el('div', 'title-row', col);
     langToggle(row);
-    const best = bestPayout();
+    const best = readRecord('mfh.best');
+    const bestDrift = readRecord('mfh.bestDrift');
+    const bests = el('div', 'best-chips', row); // the two records wrap together, never one by one
     if (best > 0) {
-      const b = el('div', 'best-chip', row);
+      const b = el('div', 'best-chip', bests);
       pic(ICON + 'cash.svg', '💵', 'chip-ico', b);
       el('span', 'best-label', b, tx(S.best_payout));
       el('span', 'best-val num', b, money(best));
+    }
+    if (bestDrift > 0) {
+      const b = el('div', 'best-chip best-drift', bests);
+      pic(ICON + 'drift.svg', '💨', 'chip-ico', b);
+      el('span', 'best-label', b, tx(S.best_drift));
+      el('span', 'best-val num', b, pts(bestDrift));
     }
     el('p', 'controls', col, tx(S.controls));
 
@@ -126,11 +137,28 @@ export function createScreens(root: HTMLElement, actions: ScreenActions): Screen
       pic(ICON + 'urgent.svg', '⏰', 'badge-ico', b);
       el('span', '', b, tx(S.badge_urgent));
     }
+    if (o.package === 'heavy') {
+      const b = el('span', 'badge badge-heavy', badges);
+      pic(ICON + 'heavy.svg', '📦', 'badge-ico', b);
+      el('span', '', b, tx(S.badge_heavy));
+    }
+    if (o.package === 'passenger') {
+      const b = el('span', 'badge badge-passenger', badges);
+      pic(ICON + 'passenger.svg', '🧍', 'badge-ico', b);
+      el('span', '', b, tx(S.badge_passenger));
+    }
 
     const art = el('div', 'ticket-art', card);
     if (o.item.icon.includes('/')) pic(o.item.icon, '📦', 'ticket-img', art);
     else el('span', 'ticket-img fb', art, o.item.icon);
     el('div', 'ticket-item', card, tx(o.item.name));
+    // Passenger items may already be named after the passenger: don't print the name twice.
+    if (o.customer && tx(o.customer) !== tx(o.item.name)) {
+      const c = el('div', 'ticket-cust', card);
+      el('span', 'ticket-cust-label', c, tx(o.package === 'passenger' ? S.ticket_passenger : S.ticket_customer));
+      el('span', 'ticket-cust-name', c, tx(o.customer));
+    }
+    if (o.note) el('div', 'ticket-note', card, `“${tx(o.note)}”`);
 
     const route = el('div', 'ticket-route', card);
     const a = el('div', 'stop stop-pick', route);
@@ -228,6 +256,38 @@ export function createScreens(root: HTMLElement, actions: ScreenActions): Screen
     el('p', 'controls', p, tx(S.controls));
   }
 
+  // ---------- continue (one per shift, after towed / fired) ----------
+  function buildContinue(reason: EndReason) {
+    const towed = reason === 'towed';
+    const sc = screen(`scr-continue end-${reason}`);
+    const card = el('div', 'cont', sc);
+    const info = el('div', 'cont-info', card);
+    const head = el('div', 'cont-head', info);
+    pic(ICON + (towed ? 'wrecked.svg' : 'suspended.svg'), towed ? '🚗' : '🚫', 'cont-ico', head);
+    const ht = el('div', 'cont-head-text', head);
+    el('div', 'cont-kicker', ht, `YOLDAŞ · ${tx(S.cont_kicker)}`);
+    el('h2', 'cont-title', ht, tx(towed ? S.end_towed : S.end_fired));
+    el('p', 'cont-body', info, tx(S.cont_body));
+
+    const perks = el('ul', 'cont-perks', info);
+    const good = el('li', 'perk perk-good', perks);
+    pic(ICON + (towed ? 'health.svg' : 'star.svg'), towed ? '🔧' : '★', 'perk-ico', good);
+    el('span', '', good, tx(towed ? S.cont_perk_towed : S.cont_perk_fired));
+    const warn = el('li', 'perk perk-warn', perks);
+    el('span', 'perk-ico fb', warn, '🏁');
+    el('span', '', warn, tx(S.cont_perk_unranked));
+
+    const btns = el('div', 'cont-btns', card);
+    const yes = button(btns, S.cont_yes, 'Enter', actions.continueShift, 'btn-primary btn-big btn-cont');
+    yes.prepend(pic(ICON + 'continue.svg', '▶', 'btn-ico'));
+    yes.querySelector('.btn-label')?.append(el('small', 'btn-sub', undefined, tx(S.cont_yes_sub)));
+    button(btns, S.cont_no, 'Esc', actions.declineContinue, 'btn-secondary');
+    // Where the rewarded ad will go (game/ads.ts); for now the continue is free.
+    const ad = el('div', 'ad-chip', btns);
+    pic(ICON + 'watch_ad.svg', '📺', 'ad-chip-ico', ad);
+    el('span', '', ad, tx(S.cont_ad_chip));
+  }
+
   // ---------- shift end ----------
   function buildEnd(sum: ShiftSummary, rating: number) {
     const sc = screen(`scr-end end-${sum.reason}`);
@@ -254,21 +314,32 @@ export function createScreens(root: HTMLElement, actions: ScreenActions): Screen
     row(tx(S.row_tips), money(sum.tips));
     if (sum.adIncome > 0) row(tx(S.row_ads), money(sum.adIncome));
     row(tx(S.row_reports, { n: sum.discoveries }), money(sum.discoveryBonus));
+    if (sum.driftCash > 0) row(tx(S.row_drift_cash), money(sum.driftCash));
+    if (sum.repairs > 0) row(tx(S.row_mechanic), `−${money(sum.repairs)}`, 'neg');
     row(tx(S.row_repair), `−${money(sum.repairBill)}`, sum.repairBill > 0 ? 'neg' : '');
     row(tx(S.row_total), money(sum.total), 'total');
     row(tx(S.row_rating), `★ ${rating.toFixed(1)}`, rating < 3 ? 'neg' : '');
-    const record = sum.total > 0 && sum.total >= sum.best;
-    row(record ? tx(S.row_new_best) : tx(S.row_best), money(Math.max(sum.best, sum.total)), record ? 'record' : 'muted');
+    // Unranked shifts never set records: the stored best is shown as is.
+    const record = !sum.unranked && sum.total > 0 && sum.total >= sum.best;
+    row(record ? tx(S.row_new_best) : tx(S.row_best), money(record ? sum.total : sum.best), record ? 'record' : 'muted');
     el('div', 'slip-cut', rows);
+    row(tx(S.row_drift_score), pts(sum.driftScore), 'muted');
+    if (sum.bestChain > 1) row(tx(S.row_best_chain), `×${sum.bestChain}`, 'muted');
+    const driftRecord = !sum.unranked && sum.driftScore > 0 && sum.driftScore >= sum.bestDrift;
+    if (sum.bestDrift > 0 || driftRecord) {
+      row(driftRecord ? tx(S.row_new_best_drift) : tx(S.row_best_drift), pts(driftRecord ? sum.driftScore : sum.bestDrift), driftRecord ? 'record' : 'muted');
+    }
     row(tx(S.row_mult), `×${sum.bestMultiplier.toFixed(1).replace(/\.0$/, '')}`, 'muted');
     row(tx(S.row_trusted), String(sum.trusted), 'muted');
     row(tx(S.row_dodged), String(sum.liesDodged), 'muted');
     row(tx(S.row_followed), String(sum.liesFollowed), 'muted');
+    if (sum.pedsHit > 0) row(tx(S.row_peds), String(sum.pedsHit), 'muted');
     el('p', 'slip-foot', slip, tx(S.slip_footer));
 
     if (sum.reason !== 'time') {
       el('div', 'stamp stamp-red', slip, tx(sum.reason === 'fired' ? S.stamp_fired : S.stamp_towed));
     }
+    if (sum.unranked) el('div', 'stamp stamp-unranked', slip, tx(S.stamp_unranked));
 
     const btns = el('div', 'end-btns', sc);
     button(btns, S.new_shift, 'Enter', actions.startShift, 'btn-primary btn-big');
@@ -282,6 +353,7 @@ export function createScreens(root: HTMLElement, actions: ScreenActions): Screen
     if (s.phase === 'title') parts.push(hired ? 'hired' : '');
     if (s.phase === 'board') parts.push(s.offers.map((o) => o.id).join(','));
     if (s.phase === 'update') parts.push(s.updateChoices.map((u) => u.id).join(','), s.activeUpdates.length);
+    if (s.phase === 'continue') parts.push(s.pendingEnd ?? '-');
     if (s.phase === 'shiftEnd') parts.push(s.summary ? `${s.summary.reason}:${s.summary.total}` : '-');
     return parts.join('|');
   }
@@ -303,6 +375,9 @@ export function createScreens(root: HTMLElement, actions: ScreenActions): Screen
         break;
       case 'paused':
         buildPause();
+        break;
+      case 'continue':
+        if (s.pendingEnd) buildContinue(s.pendingEnd);
         break;
       case 'shiftEnd':
         if (s.summary) buildEnd(s.summary, s.rating);
@@ -353,6 +428,11 @@ export function createScreens(root: HTMLElement, actions: ScreenActions): Screen
         if (k === 'Enter') act(actions.resume);
         else if (lower === 'q') act(actions.quitToTitle);
         else if (lower === 'l') toggleLang();
+        else handled = false;
+        break;
+      case 'continue':
+        if (k === 'Enter') act(actions.continueShift);
+        else if (k === 'Escape') act(actions.declineContinue);
         else handled = false;
         break;
       case 'shiftEnd':

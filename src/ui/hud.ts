@@ -1,5 +1,7 @@
 import './ui.css';
-import type { DeliveryResult, GamePhase, Hud, HudView, NavEvent, NavView, ShiftEvent, ShiftState, TellKind } from '../game/types';
+import type {
+  DeliveryResult, GamePhase, Hud, HudFx, HudView, NavEvent, NavView, PackageKind, ShiftEvent, ShiftState, TellKind,
+} from '../game/types';
 import { onLangChange, tx } from '../game/lang';
 import { S } from './strings';
 
@@ -32,6 +34,7 @@ export function pic(src: string, fallback: string, cls: string, parent?: HTMLEle
 }
 
 export const money = (n: number) => `₺${Math.round(n)}`;
+const signedMoney = (n: number) => `${n < 0 ? '−' : '+'}${money(Math.abs(n))}`;
 
 // ---------- HUD ----------
 
@@ -45,6 +48,11 @@ const FTUE_RESULT_MS = 4000;
 const TELL_TOAST_MS = 4500;
 const HIT_TOAST_MIN = 3; // HP; smaller hits only flash
 const RATING_WARN = 3.5;
+const SHAKE_MS = 300;
+const WOBBLE_MS = 450;
+const TIP_FLOAT_MS = 1100;
+// Package cell bar turns red below this condition (heavy: the 4-star cap, passenger: the 3-star cap).
+const PKG_DANGER: Record<PackageKind, number> = { normal: 0, fragile: 35, urgent: 0, heavy: 50, passenger: 40 };
 
 type Part = 'status' | 'order' | 'phone' | 'speed' | 'hint';
 const VISIBLE: Record<GamePhase, Part[]> = {
@@ -53,6 +61,7 @@ const VISIBLE: Record<GamePhase, Part[]> = {
   update: [],
   shiftEnd: [],
   paused: [], // replaced by the phase it was paused from
+  continue: [],
   ftue: ['phone', 'speed', 'hint'],
   driving: ['status', 'order', 'phone', 'speed'],
   free: ['speed'],
@@ -116,6 +125,8 @@ export function createHud(root: HTMLElement): Hud & { hit(points: number): void 
   const pkgBox = el('div', 'order-cell order-pkg', order);
   const pkgFragile = pic(ICON + 'fragile.svg', '🥚', 'cell-ico pkg-fragile', pkgBox);
   const pkgUrgent = pic(ICON + 'urgent.svg', '⏰', 'cell-ico pkg-urgent', pkgBox);
+  const pkgHeavy = pic(ICON + 'heavy.svg', '📦', 'cell-ico pkg-heavy', pkgBox);
+  const pkgPassenger = pic(ICON + 'passenger.svg', '🧍', 'cell-ico pkg-passenger', pkgBox);
   const pkgBar = el('div', 'bar bar-thin', pkgBox);
   const pkgFill = el('div', 'bar-fill', pkgBar);
 
@@ -164,7 +175,6 @@ export function createHud(root: HTMLElement): Hud & { hit(points: number): void 
   const parts: Record<Part, HTMLElement> = { status, order, phone, speed, hint };
 
   function relabel() {
-    subWho.textContent = tx(S.yoldas_prefix);
     hintText.textContent = tx(S.hint_drive);
   }
   relabel();
@@ -201,6 +211,9 @@ export function createHud(root: HTMLElement): Hud & { hit(points: number): void 
   let prevRating = 5;
   let prevMult = 1;
   let prevPkg = 100;
+  let prevTipBonus = 0;
+  let subKind = '';
+  let wobble: Animation | null = null;
   let resultTimer = 0;
   let toldTells = new Set<TellKind>();
 
@@ -254,6 +267,8 @@ export function createHud(root: HTMLElement): Hud & { hit(points: number): void 
       setClass(pkgBox, 'show', offer.package !== 'normal');
       setClass(pkgFragile, 'show', offer.package === 'fragile');
       setClass(pkgUrgent, 'show', offer.package === 'urgent');
+      setClass(pkgHeavy, 'show', offer.package === 'heavy');
+      setClass(pkgPassenger, 'show', offer.package === 'passenger');
     }
     setText(legPick, tx(offer.pickup.name));
     setText(legDrop, tx(offer.dropoff.name));
@@ -261,14 +276,14 @@ export function createHud(root: HTMLElement): Hud & { hit(points: number): void 
     setClass(legDrop, 'active', o.phase === 'toDropoff');
 
     const r = o.elapsed / Math.max(1, offer.expectedTime);
-    setText(tipText, money(o.tipNow * s.multiplier * s.mods.tipMul));
+    setText(tipText, money(Math.max(0, o.tipNow * s.multiplier * s.mods.tipMul + o.tipBonus)));
     setFrac(tipFill, offer.tipMax > 0 ? o.tipNow / offer.tipMax : 0);
     setClass(tipBox, 'danger', r > 1.5);
     setText(multText, `×${s.multiplier.toFixed(1).replace(/\.0$/, '')}`);
     setClass(multBox, 'hot', s.multiplier >= 3);
-    if (offer.package === 'fragile') {
+    if (offer.package === 'fragile' || offer.package === 'heavy' || offer.package === 'passenger') {
       setFrac(pkgFill, o.packageHealth / 100);
-      setClass(pkgBox, 'danger', o.packageHealth < 35);
+      setClass(pkgBox, 'danger', o.packageHealth < PKG_DANGER[offer.package]);
     } else if (offer.package === 'urgent') {
       setFrac(pkgFill, 1 - o.elapsed / (2 * offer.expectedTime));
       setClass(pkgBox, 'danger', r > 1.5);
@@ -312,7 +327,7 @@ export function createHud(root: HTMLElement): Hud & { hit(points: number): void 
     let faceSrc = 'idle.gif';
     if (nav.glitch) faceSrc = 'glitch.gif';
     else if (icon === 'recalc') faceSrc = 'recalc.gif';
-    else if (v.subtitle) faceSrc = v.subtitle.mood === 'neutral' ? 'talking.gif' : `${v.subtitle.mood}.png`;
+    else if (v.subtitle && !v.subtitle.speaker) faceSrc = v.subtitle.mood === 'neutral' ? 'talking.gif' : `${v.subtitle.mood}.png`;
     setSrc(faceImg, FACE + faceSrc);
   }
 
@@ -322,7 +337,16 @@ export function createHud(root: HTMLElement): Hud & { hit(points: number): void 
     const ph = hud.dataset.phase;
 
     setClass(sub, 'show', v.subtitle !== null);
-    if (v.subtitle) setRich(subText, v.subtitle.text);
+    if (v.subtitle) {
+      const who = v.subtitle.speaker;
+      setText(subWho, who ? who.label : tx(S.yoldas_prefix));
+      const kind = who ? who.kind : 'yoldas';
+      if (kind !== subKind) {
+        subKind = kind;
+        subWho.className = `sub-who sub-who--${kind}`;
+      }
+      setRich(subText, v.subtitle.text);
+    }
 
     setText(speedVal, String(Math.round(v.speedKmh)));
 
@@ -342,7 +366,10 @@ export function createHud(root: HTMLElement): Hud & { hit(points: number): void 
     cur = s;
     prevRating = s.rating;
     prevMult = s.multiplier;
-    if (s.order) prevPkg = s.order.packageHealth;
+    if (s.order) {
+      prevPkg = s.order.packageHealth;
+      prevTipBonus = s.order.tipBonus;
+    }
   }
 
   // Lines mark emphasis with *asterisks*: render those words as <em> (text nodes only, no HTML parsing).
@@ -384,7 +411,12 @@ export function createHud(root: HTMLElement): Hud & { hit(points: number): void 
     const lines = [`${tx(S.fare)} ${money(r.fare)} · ${tx(S.res_tip)} ${money(r.tip)}${mult}`, starsText];
     if (r.offer.package === 'fragile') {
       lines.push(r.ruined ? tx(S.res_pkg_ruined) : `${tx(S.res_pkg)} ${Math.round(prevPkg)}%`);
+    } else if (r.offer.package === 'heavy') {
+      lines.push(`${tx(S.res_condition)} ${Math.round(prevPkg)}%`);
+    } else if (r.offer.package === 'passenger') {
+      lines.push(`${tx(S.res_comfort)} ${Math.round(prevPkg)}%`);
     }
+    if (Math.round(prevTipBonus) !== 0) lines.push(`${tx(S.res_tip_bonus)} ${signedMoney(prevTipBonus)}`);
     if (ftue) lines.push(tx(S.res_ftue));
     else if (cur) lines.push(ratingLine(cur.rating));
     const title = ftue ? tx(S.hired_title) : r.ruined ? tx(S.toast_ruined) : r.late ? tx(S.res_late) : tx(S.res_delivered);
@@ -407,12 +439,14 @@ export function createHud(root: HTMLElement): Hud & { hit(points: number): void 
 
   // ---- events: toasts and one-shot animations ----
 
+  // icon: a file under ui/icons/ (has a '.') or an emoji.
   function toast(main: string, opts: { sub?: string; icon?: string; kind?: 'good' | 'bad' | 'info'; ms?: number } = {}) {
     while (toasts.children.length >= 3) toasts.firstElementChild?.remove();
     const t = el('div', `toast toast-${opts.kind ?? 'info'}`, toasts);
     const ms = opts.ms ?? TOAST_MS;
     t.style.animationDuration = `${ms}ms`;
-    if (opts.icon) pic(ICON + opts.icon, '', 'toast-ico', t);
+    if (opts.icon?.includes('.')) pic(ICON + opts.icon, '', 'toast-ico', t);
+    else if (opts.icon) el('span', 'toast-ico fb', t, opts.icon);
     const body = el('div', 'toast-body', t);
     el('div', 'toast-main', body, main);
     if (opts.sub) el('div', 'toast-sub', body, opts.sub);
@@ -423,8 +457,81 @@ export function createHud(root: HTMLElement): Hud & { hit(points: number): void 
     e.animate(frames, { duration: ms, easing: 'cubic-bezier(.2,.9,.3,1.3)' });
   }
 
-  function event(e: NavEvent | ShiftEvent) {
+  function shake(strength: number) {
+    const k = Math.max(0, Math.min(1, strength));
+    if (k <= 0) return;
+    const d = 0.15 + 0.6 * k; // em
+    hud.animate(
+      [
+        { transform: 'translate(0, 0)' },
+        { transform: `translate(${-d}em, ${d * 0.5}em)` },
+        { transform: `translate(${d}em, ${-d * 0.4}em)` },
+        { transform: `translate(${-d * 0.6}em, ${-d * 0.3}em)` },
+        { transform: `translate(${d * 0.4}em, ${d * 0.2}em)` },
+        { transform: 'translate(0, 0)' },
+      ],
+      { duration: SHAKE_MS, easing: 'linear' },
+    );
+    flash.animate([{ opacity: 0.2 + 0.5 * k }, { opacity: 0 }], { duration: 300 + 300 * k, easing: 'ease-out' });
+  }
+
+  function pkgWobble(strength: number) {
+    const a = 6 + 14 * Math.max(0, Math.min(1, strength)); // deg
+    wobble?.cancel();
+    wobble = pkgBox.animate(
+      [
+        { transform: 'rotate(0) scale(1)' },
+        { transform: `rotate(${-a}deg) scale(1.12)` },
+        { transform: `rotate(${a * 0.7}deg) scale(1.06)` },
+        { transform: `rotate(${-a * 0.35}deg) scale(1.02)` },
+        { transform: 'rotate(0) scale(1)' },
+      ],
+      { duration: WOBBLE_MS, easing: 'ease-out' },
+    );
+  }
+
+  function urgentTick(level: 1 | 2) {
+    const bg = level === 2 ? '#e8826f' : '#ffd9a0';
+    const frames: Keyframe[] = [{ transform: 'scale(1)' }, { transform: 'scale(1.18)', background: bg }, { transform: 'scale(1)' }];
+    pulse(tipBox, frames, 500);
+    if (pkgBox.classList.contains('show')) pulse(pkgBox, frames, 500);
+  }
+
+  function tipFloat(delta: number) {
+    const f = el('span', `tip-float num ${delta > 0 ? 'up' : 'down'}`, tipBox, signedMoney(delta));
+    f.animate(
+      [
+        { opacity: 0, transform: 'translate(-50%, 0.4em) scale(0.8)' },
+        { opacity: 1, transform: 'translate(-50%, -0.6em) scale(1.1)', offset: 0.2 },
+        { opacity: 1, transform: 'translate(-50%, -1.6em) scale(1)', offset: 0.75 },
+        { opacity: 0, transform: 'translate(-50%, -2.4em) scale(1)' },
+      ],
+      { duration: TIP_FLOAT_MS, easing: 'ease-out' },
+    ).onfinish = () => f.remove();
+    pulse(tipBox, [{ transform: 'scale(1)' }, { transform: 'scale(1.15)' }, { transform: 'scale(1)' }], 350);
+  }
+
+  function event(e: NavEvent | ShiftEvent | HudFx) {
     switch (e.type) {
+      case 'toast':
+        toast(tx(e.text, e.params), { sub: e.sub ? tx(e.sub, e.params) : undefined, icon: e.icon, kind: e.tone });
+        break;
+      case 'shake':
+        shake(e.strength);
+        break;
+      case 'pkgWobble':
+        pkgWobble(e.strength);
+        break;
+      case 'urgentTick':
+        urgentTick(e.level);
+        break;
+      case 'tipAdjust':
+        if (cur?.phase === 'driving') tipFloat(e.delta);
+        break;
+      case 'penalty':
+        toast(tx(S.toast_ped, { n: e.amount.toFixed(1) }), { icon: '🚶', kind: 'bad' });
+        flash.animate([{ opacity: 0.35 }, { opacity: 0 }], { duration: 380, easing: 'ease-out' });
+        break;
       case 'delivered':
         deliveredBanner(e.result);
         break;
@@ -466,13 +573,14 @@ export function createHud(root: HTMLElement): Hud & { hit(points: number): void 
         break;
       case 'money':
         if (e.reason === 'discovery') toast(tx(S.toast_report, { n: Math.round(e.amount) }), { icon: 'report.svg', kind: 'good' });
-        else toast(tx(S.toast_ad, { n: Math.round(e.amount) }), { kind: 'info' });
-        break;
+        else if (e.reason === 'ad') toast(tx(S.toast_ad, { n: Math.round(e.amount) }), { kind: 'info' });
+        else if (e.reason === 'drift' && e.amount >= 1) toast(tx(S.toast_drift_cash, { n: Math.round(e.amount) }), { icon: 'drift.svg', kind: 'good' });
+        break; // 'repair': the mechanic prompt shows the spending
       case 'fakeRoadHit':
         flash.animate([{ opacity: 0.55 }, { opacity: 0 }], { duration: 500, easing: 'ease-out' });
         break;
       case 'phase':
-        if (e.phase === 'shiftEnd' || e.phase === 'title' || e.phase === 'free') {
+        if (e.phase === 'shiftEnd' || e.phase === 'continue' || e.phase === 'title' || e.phase === 'free') {
           toasts.textContent = '';
           hideResult();
         }

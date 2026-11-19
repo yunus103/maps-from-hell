@@ -1,0 +1,24 @@
+<svg viewBox="0 0 1024 1024" xmlns="http://www.w3.org/2000/svg" width="1024" height="1024">
+  <title>Retro television play icon</title>
+  <g stroke="#504d4b" stroke-linecap="round" stroke-linejoin="round">
+    <g id="antenna" stroke-width="30">
+      <path d="M453 253 320 111M570 253 704 111" fill="none" />
+      <circle cx="307" cy="103" r="60" fill="#d9702e" />
+      <circle cx="715" cy="103" r="60" fill="#d9702e" />
+      <path d="M387 309C397 254 450 216 511 216S624 254 635 309Z" fill="#e8dcc2" />
+    </g>
+    <g id="feet" fill="#d9702e" stroke-width="29">
+      <path d="M207 916 337 916 319 971Q308 1005 278 1005H240Q201 1005 202 965Z" />
+      <path d="M681 916H818L820 965Q821 1005 781 1005H745Q715 1005 704 975Z" />
+    </g>
+    <rect id="cabinet" x="80" y="308" width="859" height="620" rx="176" fill="#d9702e" stroke-width="31" />
+    <path id="cabinet-highlight" d="M147 436C163 377 215 351 280 353H346" fill="none" stroke="#e8dcc2" stroke-width="32" />
+    <path id="screen" d="M171 517C184 439 223 421 296 414 385 406 524 404 612 413 692 420 720 450 729 518 737 578 738 691 728 748 716 818 686 840 617 845 523 852 378 852 291 845 216 839 183 816 171 748 160 685 160 581 171 517Z" fill="#e8dcc2" stroke-width="31" />
+    <path id="screen-highlight" d="M207 536C211 483 238 461 293 454 317 451 347 448 368 448 382 448 388 460 372 468 316 495 276 526 247 561 224 588 201 574 207 536Z" fill="#f7eedc" stroke="none" />
+    <path id="play" d="M425 515 572 606Q606 630 575 658L421 757Q365 783 364 730L365 548Q366 494 407 509Z" fill="#d9702e" stroke-width="32" />
+    <g id="controls" fill="#e8dcc2" stroke-width="26">
+      <circle cx="831" cy="544" r="53" />
+      <circle cx="831" cy="708" r="53" />
+    </g>
+  </g>
+</svg>

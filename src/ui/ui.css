@@ -125,6 +125,14 @@
 .order-pkg .cell-ico.show { display: block; }
 .order-pkg .fb.cell-ico.show { display: inline-grid; }
 .order-pkg.danger { background: #f1c4b4; }
+.order-tip { position: relative; }
+/* passenger tip reaction: "+₺5" floats up from the tip cell */
+.tip-float {
+  position: absolute; left: 50%; top: -0.2em; pointer-events: none; white-space: nowrap;
+  font-size: 1.35em; font-weight: 900; text-shadow: 0 0.1em 0 var(--ink);
+}
+.tip-float.up { color: #8fe0a8; }
+.tip-float.down { color: #ff9a8a; }
 
 /* ---- YOLDAŞ phone (right) ---- */
 .hud-phone {
@@ -247,7 +255,7 @@
 }
 .hud-sub.show { opacity: 1; transform: translateX(-50%) translateY(0); }
 /* menus: a wide, smaller strip docked at the very bottom, below the cards */
-.hud[data-phase="board"] .hud-sub, .hud[data-phase="update"] .hud-sub, .hud[data-phase="shiftEnd"] .hud-sub {
+.hud[data-phase="board"] .hud-sub, .hud[data-phase="update"] .hud-sub, .hud[data-phase="shiftEnd"] .hud-sub, .hud[data-phase="continue"] .hud-sub {
   bottom: 0.5em; max-width: 94vw; font-size: 1.1em; padding: 0.4em 1em 0.5em;
 }
 .sub-who {
@@ -255,6 +263,10 @@
   background: var(--orange); color: var(--ink); font-weight: 900; font-size: 0.72em; letter-spacing: 0.06em;
   transform: translateY(-0.15em);
 }
+/* other speakers get their own tag colour so a second voice never reads as YOLDAŞ */
+.sub-who--passenger { background: #2a9d8f; }
+.sub-who--customer { background: #8fa9c4; }
+.sub-who--mechanic { background: #a3adb8; }
 .sub-text { font-weight: 800; }
 .sub-text em { font-style: italic; color: var(--orange-hi); }
 
@@ -292,6 +304,7 @@
 .toast-good { background: #cfe3c9; }
 .toast-bad { background: #f1c4b4; }
 .toast-ico { width: 2.2em; height: 2.2em; }
+.toast-ico.fb { width: auto; height: auto; font-size: 1.9em; }
 .toast-main { font-size: 1.7em; font-weight: 900; line-height: 1.1; }
 .toast-sub { font-size: 1.1em; color: var(--orange-lo); letter-spacing: 0.08em; }
 @keyframes toast {
@@ -413,6 +426,9 @@
 }
 .best-label { font-size: 0.85em; opacity: 0.7; }
 .best-val { font-size: 1.25em; font-weight: 900; color: var(--green); }
+.best-drift .best-val { color: var(--orange-lo); }
+.best-chips { display: flex; gap: 0.6em; }
+.best-chips:empty { display: none; }
 
 .title-side { display: flex; align-items: center; justify-content: center; flex: 1; max-width: 30em; }
 .mascot { position: relative; display: flex; flex-direction: column; align-items: center; animation: logo-in 0.7s 0.15s cubic-bezier(.2, .9, .3, 1.25) both; }
@@ -485,10 +501,20 @@
 .badge-long { background: var(--gold); }
 .badge-fragile { background: #f6d3c5; }
 .badge-urgent { background: #ffd9a0; }
+.badge-heavy { background: #d9cbb0; }
+.badge-passenger { background: #9fd6cd; }
 .ticket-art { display: grid; place-items: center; height: 7em; }
 .ticket-img { width: 7em; height: 7em; object-fit: contain; }
 .ticket-img.fb { width: auto; height: auto; font-size: 4.5em; }
 .ticket-item { font-size: 1.5em; font-weight: 900; text-align: center; line-height: 1.1; }
+.ticket-cust { display: flex; justify-content: center; align-items: baseline; gap: 0.4em; margin-top: -0.35em; min-width: 0; }
+.ticket-cust-label { flex: none; font-size: 0.72em; text-transform: uppercase; letter-spacing: 0.08em; opacity: 0.55; font-weight: 900; }
+.ticket-cust-name { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ticket-note {
+  padding: 0.35em 0.6em; border-radius: 0.6em; background: rgba(38, 34, 31, 0.07);
+  font-size: 0.9em; font-style: italic; font-weight: 700; line-height: 1.25; text-align: center; opacity: 0.85;
+  display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; overflow: hidden;
+}
 .ticket-route { display: flex; flex-direction: column; gap: 0.25em; padding: 0.5em 0; border-top: 0.14em dashed rgba(38, 34, 31, 0.35); border-bottom: 0.14em dashed rgba(38, 34, 31, 0.35); }
 .stop { display: flex; align-items: center; gap: 0.45em; }
 .stop-ico { width: 1.5em; height: 1.5em; flex: none; }
@@ -591,6 +617,53 @@
 .slip-cut { height: 0; border-top: 0.14em dashed var(--ink); margin: 0.4em 0; opacity: 0.5; }
 .slip-foot { margin: 0; font-size: 0.75em; text-align: center; opacity: 0.6; }
 .end-btns { display: flex; gap: 0.8em; flex-wrap: wrap; justify-content: center; }
+
+/* continued shift: never a record, so a rubber stamp over the stats says so */
+.stamp-unranked {
+  color: #44558c; font-size: 1.4em; right: auto; left: 3%; bottom: 29%; /* over the records rows */
+  transform: rotate(9deg); animation-name: stamp-unranked; animation-delay: 0.6s;
+}
+@keyframes stamp-unranked { from { opacity: 0; transform: rotate(9deg) scale(2.2); } }
+
+/* ---- continue: one second chance per shift ---- */
+.cont {
+  position: relative; width: min(30em, 100%); flex: none;
+  display: flex; flex-direction: column; gap: 0.9em;
+  padding: 1.5em 1.7em 1.3em;
+  background: var(--paper); border: var(--line); border-radius: 1.4em; box-shadow: 0 0.4em 0 var(--ink);
+  animation: logo-in 0.45s cubic-bezier(.2, .9, .3, 1.25) both;
+}
+.cont-info { display: flex; flex-direction: column; gap: 0.9em; min-width: 0; }
+.cont-head { display: flex; align-items: center; gap: 0.8em; }
+.cont-ico { width: 3.6em; height: 3.6em; flex: none; }
+.cont-ico.fb { width: auto; height: auto; font-size: 2.6em; }
+.cont-head-text { min-width: 0; }
+.cont-kicker { font-size: 0.78em; letter-spacing: 0.14em; text-transform: uppercase; opacity: 0.65; }
+.cont-title { margin: 0.1em 0 0; font-size: 2em; font-weight: 900; line-height: 1.05; color: var(--red); }
+.cont-body { margin: 0; font-size: 1.05em; line-height: 1.35; }
+.cont-perks { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 0.45em; }
+.perk {
+  display: flex; align-items: center; gap: 0.55em;
+  padding: 0.4em 0.7em 0.4em 0.45em; border-radius: 0.7em; border: 0.14em solid var(--ink);
+}
+.perk-good { background: #cfe3c9; }
+.perk-warn { background: transparent; border-style: dashed; opacity: 0.8; }
+.perk-ico { width: 1.7em; height: 1.7em; flex: none; }
+.perk-ico.fb { width: 1.7em; font-size: 1.2em; }
+.cont-btns { display: flex; flex-direction: column; gap: 0.6em; margin-top: 0.2em; }
+.cont-btns .btn { width: 100%; min-width: 0; }
+.btn-cont { gap: 0.6em; padding-left: 0.9em; }
+.btn-cont .btn-label { flex: 1; display: flex; flex-direction: column; text-align: left; line-height: 1.1; }
+.btn-sub { font-size: 0.55em; font-weight: 800; letter-spacing: 0.06em; text-transform: uppercase; opacity: 0.75; }
+.btn-ico { width: 1.5em; height: 1.5em; flex: none; }
+.btn-ico.fb { font-size: 1.1em; }
+.ad-chip {
+  align-self: center; display: inline-flex; align-items: center; gap: 0.4em;
+  padding: 0.2em 0.75em 0.2em 0.35em; border: 0.13em dashed rgba(38, 34, 31, 0.45); border-radius: 99px;
+  font-size: 0.82em; opacity: 0.6;
+}
+.ad-chip-ico { width: 1.5em; height: 1.5em; filter: grayscale(1); }
+.ad-chip-ico.fb { font-size: 1.1em; }
 
 .tells { width: 100%; font-size: 0.9em; }
 .tells-title { font-weight: 900; color: var(--orange-hi); margin-bottom: 0.3em; }
@@ -735,7 +808,7 @@ html.is-touch .hud[data-phase="ftue"] .hud-sub, html.is-touch .hud[data-phase="d
   .speed-val { font-size: 2.4em; }
   /* left: 50% caps a shrink-to-fit box at half the screen; max-content lets max-width decide instead */
   .hud-sub { font-size: 1.2em; bottom: 1.2em; width: max-content; }
-  .hud[data-phase="board"] .hud-sub, .hud[data-phase="update"] .hud-sub, .hud[data-phase="shiftEnd"] .hud-sub { font-size: 0.95em; bottom: 0.3em; }
+  .hud[data-phase="board"] .hud-sub, .hud[data-phase="update"] .hud-sub, .hud[data-phase="shiftEnd"] .hud-sub, .hud[data-phase="continue"] .hud-sub { font-size: 0.95em; bottom: 0.3em; }
   .hud-toasts { font-size: 0.8em; top: 26%; }
   .hud-result { font-size: 0.8em; top: 5.6em; } /* below the order strip */
   .hud-hint { top: 4.5em; }
@@ -794,12 +867,28 @@ html.is-touch .hud[data-phase="ftue"] .hud-sub, html.is-touch .hud[data-phase="d
   .slip-ico { width: 2em; height: 2em; }
   .slip-title { font-size: 1.5em; }
   .slip-sub { flex-basis: 100%; }
-  .slip-rows { display: grid; grid-auto-flow: column; grid-template-rows: repeat(8, auto); column-gap: 1.6em; row-gap: 0.15em; padding: 0.5em 0; }
+  .slip-rows { display: grid; grid-auto-flow: column; grid-template-rows: repeat(10, auto); column-gap: 1.6em; row-gap: 0.15em; padding: 0.5em 0; }
   .slip-cut { display: none; }
   .slip-row.total { margin-top: 0; padding-top: 0.2em; font-size: 1.2em; }
   .stamp-red { font-size: 2em; }
   .end-btns { flex-direction: column; flex-wrap: nowrap; }
   .end-btns .btn { min-width: 11em; }
+  .stamp-unranked { font-size: 1.15em; left: auto; right: 5%; bottom: auto; top: 30%; }
+
+  .ticket-cust { font-size: 11px; margin-top: -0.1em; }
+  .ticket-note { display: none; } /* no room on a phone; customer name stays */
+
+  /* continue: info on the left, the two big buttons on the right, between the thumbs */
+  .screen.scr-continue { padding-bottom: 2.2em; } /* clear of the docked subtitle */
+  .cont { flex-direction: row; align-items: center; gap: 1.4em; width: min(46em, 100%); padding: 1em 1.3em; }
+  .cont-info { flex: 1; gap: 0.55em; }
+  .cont-ico { width: 2.6em; height: 2.6em; }
+  .cont-title { font-size: 1.55em; }
+  .cont-kicker { font-size: 11px; }
+  .cont-body { font-size: 0.95em; }
+  .perk { padding: 0.25em 0.6em 0.25em 0.4em; font-size: 0.9em; }
+  .perk-ico { width: 1.4em; height: 1.4em; }
+  .cont-btns { flex: 0 1 15em; min-width: 12em; margin: 0; }
 }
 
 /* ---- short landscape (browser chrome showing, iPhone Safari ≈ 340 px): the phone turns into a flat card ---- */
